@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createServerSupabaseClient } from '@/lib/supabase-server';
 import ProfileForm from '@/components/ProfileForm';
 import { updateProfileAction } from './actions';
 
@@ -24,8 +24,6 @@ export default async function ProfilePage() {
     <div className="max-w-3xl mx-auto py-12 px-4">
       <h1 className="text-2xl font-bold mb-6">Your Profile Preferences</h1>
       <div className="bg-white p-6 rounded shadow">
-        {/* Pass server action to client form */}
-        {/* @ts-expect-error Server action passed to client component */}
         <ProfileForm action={updateProfileAction} initial={profile} />
       </div>
     </div>

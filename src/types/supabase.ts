@@ -1,5 +1,3 @@
-import { Database } from '@supabase/supabase-js';
-
 // Auth types
 export interface UserMetadata {
   email?: string;

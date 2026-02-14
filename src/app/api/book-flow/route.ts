@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase";
-import { runPriceScout } from "@/lib/agents/priceScoutAgent";
-import { runExperienceCurator } from "@/lib/agents/experienceCuratorAgent";
-import type { UserPreferences } from "@/lib/agents/experienceCuratorAgent";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { runPriceScout } from "@/lib/priceScoutAgent";
+import { runExperienceCurator } from "@/lib/experienceCuratorAgent";
+import type { UserPreferences } from "@/lib/experienceCuratorAgent";
 
 interface BookFlowRequest {
   roomType: string;

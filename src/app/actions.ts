@@ -3,7 +3,7 @@
  * This shows how to use the serverSupabaseClient in a Server Action
  */
 
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createServerSupabaseClient } from '@/lib/supabase-server';
 import { Reservation } from '@/types/supabase';
 
 /**
