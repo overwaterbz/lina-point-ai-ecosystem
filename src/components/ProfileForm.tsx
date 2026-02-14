@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import toast from 'react-hot-toast';
 
 interface ProfileFormProps {
   action: any; // server action
@@ -29,8 +30,11 @@ export default function ProfileForm({ action, initial }: ProfileFormProps) {
       const form = e.target as HTMLFormElement;
       await action(new FormData(form));
       setSuccess(true);
+      toast.success('Profile saved');
     } catch (err: any) {
-      setError(err?.message || String(err));
+      const msg = err?.message || String(err);
+      setError(msg);
+      toast.error(`Error: ${msg}`);
     } finally {
       setLoading(false);
     }
