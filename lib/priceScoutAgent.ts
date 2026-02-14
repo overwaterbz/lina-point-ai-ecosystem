@@ -1,5 +1,11 @@
-// LangGraph-based Price Scout Agent with recursive refinement loop
+// LangGraph-based Price Scout Agent with recursive refinement loop + Grok integration
 import { z } from "zod";
+import {
+  fetchCompetitivePrices,
+  calculateBeatPrice,
+  formatPrice,
+} from "./otaIntegration";
+import { analyzePricesWithGrok } from "./grokIntegration";
 
 interface OTAResult {
   ota: "agoda" | "expedia" | "booking";
@@ -26,22 +32,28 @@ async function searchOTA(
   location: string
 ): Promise<OTAResult | null> {
   try {
-    // Mock implementation - in production, integrate real OTA APIs with tavily search
-    const mockPrices: Record<string, number> = {
-      agoda: 180,
-      expedia: 175,
-      booking: 182,
-    };
+    // Fetch competitive prices from all OTAs
+    const competitivePrices = await fetchCompetitivePrices(
+      query,
+      checkIn,
+      checkOut,
+      location
+    );
 
-    // Simulate slight price variations
-    const basePrice = mockPrices[ota];
-    const variation = Math.random() * 20 - 10;
-    const price = Math.max(basePrice + variation, 100);
+    // Find the requested OTA
+    const otaPrice = competitivePrices.find(
+      (p) => p.ota.toLowerCase() === ota.toLowerCase()
+    );
+
+    if (!otaPrice) {
+      console.warn(`${ota} not found in results`);
+      return null;
+    }
 
     return {
-      ota,
-      price: Math.round(price * 100) / 100,
-      url: `https://${ota}.com/search?q=${encodeURIComponent(query)}&checkin=${checkIn}&checkout=${checkOut}`,
+      ota: ota as "agoda" | "expedia" | "booking",
+      price: otaPrice.price,
+      url: otaPrice.url,
       roomType: query,
     };
   } catch (error) {
@@ -58,18 +70,23 @@ export async function runPriceScout(
   location: string
 ): Promise<PriceScoutResult> {
   console.log("[PriceScoutAgent] Starting workflow");
-  console.log(`[PriceScoutAgent] Query: ${roomQuery} | Dates: ${checkInDate} to ${checkOutDate}`);
+  console.log(
+    `[PriceScoutAgent] Query: ${roomQuery} | Dates: ${checkInDate} to ${checkOutDate}`
+  );
 
   let currentBestPrice = Infinity;
   let otaResults: OTAResult[] = [];
   let beatPrice = Infinity;
+  let bestBeatPercentage = 3; // Default to 3%
 
   // LangGraph Recursion: Max 3 iterations
   const maxIterations = 3;
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
-    console.log(`\n[PriceScoutAgent] Iteration ${iteration}/${maxIterations}: Scanning prices...`);
+    console.log(
+      `\n[PriceScoutAgent] Iteration ${iteration}/${maxIterations}: Scanning prices...`
+    );
 
-    // Step 1: Scan prices from all OTAs
+    // Step 1: Scan prices from all OTAs (using real/simulated web scraping)
     const results = await Promise.all([
       searchOTA("agoda", roomQuery, checkInDate, checkOutDate, location),
       searchOTA("expedia", roomQuery, checkInDate, checkOutDate, location),
@@ -82,23 +99,59 @@ export async function runPriceScout(
     );
 
     otaResults = validResults;
-    console.log(`[PriceScoutAgent] Best OTA price: ${bestResult.ota} - $${bestResult.price}`);
+    console.log(
+      `[PriceScoutAgent] Best OTA price: ${bestResult.ota} - ${formatPrice(bestResult.price)}`
+    );
 
-    // Step 2: Compare and calculate beat price (3% cheaper)
-    const newBeatPrice = Math.round(bestResult.price * 0.97 * 100) / 100;
-    console.log(`[PriceScoutAgent] Beat price (3% cheaper): $${newBeatPrice}`);
+    // Step 2: Use Grok to determine optimal beat strategy (if API key configured)
+    if (iteration === 1 && process.env.GROK_API_KEY) {
+      try {
+        console.log("[PriceScoutAgent] Consulting Grok for pricing strategy...");
+        const analysis = await analyzePricesWithGrok(
+          roomQuery,
+          validResults.map((r) => ({
+            ota: r.ota,
+            price: r.price,
+          })),
+          location
+        );
+        bestBeatPercentage = analysis.beat_percentage;
+        console.log(
+          `[PriceScoutAgent] Grok recommends beating by ${bestBeatPercentage}% (confidence: ${analysis.confidence})`
+        );
+      } catch (error) {
+        console.warn(
+          "[PriceScoutAgent] Grok analysis failed, using default 3%"
+        );
+      }
+    }
 
-    // Step 3: Refine if better deal found
+    // Step 3: Calculate beat price
+    const newBeatPrice =
+      Math.round((bestResult.price * (100 - bestBeatPercentage)) / 100 * 100) /
+      100;
+    console.log(
+      `[PriceScoutAgent] Beat price (${bestBeatPercentage}% cheaper): ${formatPrice(newBeatPrice)}`
+    );
+
+    // Step 4: Refine if better deal found
     if (iteration < maxIterations) {
-      const percentImprovement = ((currentBestPrice - newBeatPrice) / currentBestPrice) * 100;
-      console.log(`[PriceScoutAgent] Price improvement: ${percentImprovement.toFixed(2)}%`);
+      const percentImprovement =
+        ((currentBestPrice - newBeatPrice) / currentBestPrice) * 100;
+      console.log(
+        `[PriceScoutAgent] Price improvement: ${percentImprovement.toFixed(2)}%`
+      );
 
       if (percentImprovement > 1) {
-        console.log(`[PriceScoutAgent] Better deal found, continuing to next iteration...`);
+        console.log(
+          "[PriceScoutAgent] Better deal found, continuing to next iteration..."
+        );
         currentBestPrice = bestResult.price;
         beatPrice = newBeatPrice;
       } else {
-        console.log(`[PriceScoutAgent] No significant improvement, stopping search`);
+        console.log(
+          "[PriceScoutAgent] No significant improvement, stopping search"
+        );
         currentBestPrice = bestResult.price;
         beatPrice = newBeatPrice;
         break;
