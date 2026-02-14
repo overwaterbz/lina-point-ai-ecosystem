@@ -1,11 +1,83 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, Component, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
+
+// Error Boundary for catching uncaught errors
+class ErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean; error?: Error }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: any) {
+    console.error("ErrorBoundary caught:", error, errorInfo);
+    toast.error("An unexpected error occurred. Please refresh the page.");
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4 flex items-center justify-center">
+          <div className="bg-white rounded-lg shadow-lg p-8 max-w-md text-center">
+            <h2 className="text-2xl font-bold text-red-600 mb-4">Oops!</h2>
+            <p className="text-gray-600 mb-6">Something went wrong. Please refresh the page and try again.</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Refresh Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// API call with timeout protection
+async function fetchWithTimeout<T>(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = 30000
+): Promise<T> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error: any) {
+    if (error.name === "AbortError") {
+      throw new Error(`Request timeout after ${timeoutMs / 1000}s`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 function CheckoutForm({ onSuccess }: { onSuccess: () => void }) {
   const stripe = useStripe();
@@ -14,28 +86,38 @@ function CheckoutForm({ onSuccess }: { onSuccess: () => void }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!stripe || !elements) return;
-    setLoading(true);
-    const { error, paymentIntent } = await stripe.confirmPayment({
-      elements,
-      confirmParams: {
-        // No redirect; handle next steps client-side
-        return_url: window.location.href,
-      },
-      redirect: 'if_required'
-    } as any);
-
-    if (error) {
-      console.error('Payment error', error);
-      setLoading(false);
+    if (!stripe || !elements) {
+      toast.error('Stripe not loaded. Please refresh the page.');
       return;
     }
+    setLoading(true);
+    try {
+      const { error, paymentIntent } = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: window.location.href,
+        },
+        redirect: 'if_required'
+      } as any);
 
-    if (paymentIntent && paymentIntent.status === 'succeeded') {
-      onSuccess();
+      if (error) {
+        toast.error(`Payment failed: ${error.message}`);
+        console.error('Payment error', error);
+        setLoading(false);
+        return;
+      }
+
+      if (paymentIntent && paymentIntent.status === 'succeeded') {
+        onSuccess();
+      } else {
+        toast.error('Payment did not complete. Please try again.');
+      }
+    } catch (err: any) {
+      toast.error(`Payment error: ${err?.message || 'Unknown error'}`);
+      console.error('Payment submission error', err);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   return (
@@ -79,15 +161,37 @@ interface BookingResult {
   error?: string;
 }
 
+// Retry helper function  
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  delay = 1000
+): Promise<T> {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (i === maxRetries - 1) throw error;
+      await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
+    }
+  }
+  throw new Error('Max retries exceeded');
+}
+
 export default function BookingPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<BookingResult | null>(null);
   const [paymentOptions, setPaymentOptions] = useState<any>(null);
   const [showPayment, setShowPayment] = useState(false);
-  const stripePromise = (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
-    ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
-    : null;
+  
+  // Memoize stripePromise to prevent reloading on every render
+  const stripePromise = useMemo(() => 
+    (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
+      ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
+      : null,
+    []
+  );
   const [formData, setFormData] = useState({
     roomType: "overwater room",
     checkInDate: "",
@@ -137,24 +241,29 @@ export default function BookingPage() {
     const loadingToast = toast.loading("Running agents... Price Scout & Experience Curator");
 
     try {
-      const response = await fetch("/api/book-flow", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+      console.debug("[Book Flow] Starting booking with data:", {
+        roomType: formData.roomType,
+        guests: formData.groupSize,
+        dates: `${formData.checkInDate} to ${formData.checkOutDate}`,
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to process booking");
-      }
-
-      const data: BookingResult = await response.json();
+      const data: BookingResult = await fetchWithTimeout<BookingResult>(
+        "/api/book-flow",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        },
+        45000 // Extended timeout for agent processing (45s)
+      );
 
       if (!data.success) {
         throw new Error(data.error || "Booking failed");
       }
 
+      console.debug("[Book Flow] Success:", { beatPrice: data.beat_price, total: data.curated_package.total });
       setResult(data);
+
       // If server returned a client_secret from Stripe, open payment modal
       if ((data as any).client_secret) {
         setPaymentOptions({ clientSecret: (data as any).client_secret });
@@ -163,6 +272,7 @@ export default function BookingPage() {
       toast.dismiss(loadingToast);
       toast.success("Booking processed successfully!");
     } catch (error) {
+      console.error("[Book Flow] Error:", error);
       toast.dismiss(loadingToast);
       toast.error(error instanceof Error ? error.message : "An error occurred");
     } finally {
@@ -175,18 +285,31 @@ export default function BookingPage() {
     if (!result) return;
     try {
       setIsLoading(true);
-      const resp = await fetch('/api/stripe/create-payment-intent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: result.curated_package.total, currency: 'usd', metadata: { booking: 'lina-point' } }),
-      });
+      console.debug("[Payment] Creating payment intent for amount:", result.curated_package.total);
 
-      const data = await resp.json();
-      if (!resp.ok || data.error) throw new Error(data.error || 'Failed to create payment intent');
+      const data = await fetchWithTimeout<any>(
+        '/api/stripe/create-payment-intent',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            amount: result.curated_package.total, 
+            currency: 'usd', 
+            metadata: { booking: 'lina-point' } 
+          }),
+        },
+        10000 // Payment intent creation should be fast
+      );
 
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      console.debug("[Payment] Payment intent created:", data.client_secret);
       setPaymentOptions({ clientSecret: data.client_secret });
       setShowPayment(true);
     } catch (err) {
+      console.error("[Payment] Error:", err);
       toast.error(err instanceof Error ? err.message : 'Payment setup failed');
     } finally {
       setIsLoading(false);
@@ -195,14 +318,15 @@ export default function BookingPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            Belize Booking Assistant
-          </h1>
-          <p className="text-lg text-gray-600 mb-8">
-            AI-powered price comparison & tour curation powered by LangGraph & Grok-4
-          </p>
+      <ErrorBoundary>
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-7xl mx-auto">
+            <h1 className="text-4xl font-bold text-gray-900 mb-2">
+              {formData.location} Booking Assistant
+            </h1>
+            <p className="text-lg text-gray-600 mb-8">
+              AI-powered price comparison & tour curation powered by LangGraph & Grok-4
+            </p>
 
           {!result ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -226,6 +350,24 @@ export default function BookingPage() {
                       placeholder="e.g., overwater room, beach suite"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
+                  </div>
+
+                  {/* Location */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Destination
+                    </label>
+                    <select
+                      name="location"
+                      value={formData.location}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="Belize">Belize</option>
+                      <option value="Costa Rica">Costa Rica</option>
+                      <option value="Mexico">Mexico</option>
+                      <option value="Caribbean">Caribbean Islands</option>
+                    </select>
                   </div>
 
                   {/* Check-in Date */}
@@ -399,7 +541,7 @@ export default function BookingPage() {
             <div className="bg-white rounded-lg shadow-lg p-8">
               <div className="flex items-center justify-between mb-8">
                 <h2 className="text-3xl font-bold text-gray-900">
-                  Your Perfect Belize Package
+                  Your Perfect {formData.location} Package
                 </h2>
                 <button
                   onClick={() => setResult(null)}
@@ -547,6 +689,7 @@ export default function BookingPage() {
           )}
         </div>
       </div>
+      </ErrorBoundary>
     </ProtectedRoute>
   );
 }
