@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { runPriceScout } from "@/lib/priceScoutAgent";
 import { runExperienceCurator } from "@/lib/experienceCuratorAgent";
 import type { UserPreferences } from "@/lib/experienceCuratorAgent";
+import { randomUUID } from "crypto";
 
 interface BookFlowRequest {
   roomType: string;
@@ -134,17 +135,24 @@ export async function POST(request: NextRequest): Promise<NextResponse<BookFlowR
       user_id: user.id,
     });
 
-    // Save tour bookings
-    for (const tour of curatorResult.tours) {
-      await supabase.from("tour_bookings").insert({
-        user_id: user.id,
-        tour_name: tour.name,
-        tour_type: tour.type,
-        price: tour.price,
-        affiliate_link: tour.url,
-        commission_earned: tour.price * 0.1, // 10% commission
-        status: "pending",
-      });
+    // Create a booking session id to tie tours + payment together
+    const bookingId = randomUUID();
+
+    // Save tour bookings and attach booking id
+    const tourInserts = curatorResult.tours.map((tour: any) => ({
+      user_id: user.id,
+      booking_id: bookingId,
+      tour_name: tour.name,
+      tour_type: tour.type,
+      price: tour.price,
+      affiliate_link: tour.url,
+      commission_earned: tour.price * 0.1, // 10% commission
+      status: "pending_payment",
+    }));
+
+    const { error: tourInsertError } = await supabase.from("tour_bookings").insert(tourInserts);
+    if (tourInsertError) {
+      console.warn("[BookFlow] Failed to insert tour_bookings:", tourInsertError.message);
     }
 
     // Calculate dining price (assume included in package or add separately)
@@ -223,7 +231,50 @@ export async function POST(request: NextRequest): Promise<NextResponse<BookFlowR
       // Don't fail the response if analytics fails
     }
 
-    return NextResponse.json(response, { status: 200 });
+    // If Stripe is configured, verify bookings exist then create a PaymentIntent and return client_secret
+    let clientSecret: string | null = null;
+    try {
+      const stripeSecret = process.env.STRIPE_SECRET_KEY || "";
+      if (stripeSecret) {
+        // Verify that tour_bookings were inserted and belong to this user/booking
+        const { data: existingTours, error: existingErr } = await supabase
+          .from('tour_bookings')
+          .select('id')
+          .eq('booking_id', bookingId)
+          .eq('user_id', user.id)
+          .limit(1);
+
+        if (existingErr) {
+          console.warn('[BookFlow] Error checking tour_bookings before creating PaymentIntent:', existingErr.message);
+        }
+
+        if (existingTours && existingTours.length > 0) {
+          const StripeLib = (await import('stripe')).default;
+          const stripe = new StripeLib(stripeSecret);
+
+          const paymentIntent = await stripe.paymentIntents.create({
+            amount: Math.round(response.curated_package.total * 100),
+            currency: 'usd',
+            metadata: {
+              booking_id: bookingId,
+              user_id: user.id,
+            },
+          });
+
+          clientSecret = paymentIntent.client_secret || null;
+        } else {
+          console.warn('[BookFlow] No tour_bookings found for booking, skipping PaymentIntent creation');
+        }
+      }
+    } catch (stripeErr: any) {
+      console.warn('[BookFlow] Stripe PaymentIntent creation failed:', stripeErr?.message || stripeErr);
+    }
+
+    // Include client_secret in response when available
+    const responseWithPayment = { ...response } as any;
+    if (clientSecret) responseWithPayment.client_secret = clientSecret;
+
+    return NextResponse.json(responseWithPayment, { status: 200 });
   } catch (error) {
     console.error("[BookFlow] Error:", error);
 

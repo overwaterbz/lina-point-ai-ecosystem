@@ -1,9 +1,52 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { loadStripe } from "@stripe/stripe-js";
+import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
+
+function CheckoutForm({ onSuccess }: { onSuccess: () => void }) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    setLoading(true);
+    const { error, paymentIntent } = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        // No redirect; handle next steps client-side
+        return_url: window.location.href,
+      },
+      redirect: 'if_required'
+    } as any);
+
+    if (error) {
+      console.error('Payment error', error);
+      setLoading(false);
+      return;
+    }
+
+    if (paymentIntent && paymentIntent.status === 'succeeded') {
+      onSuccess();
+    }
+
+    setLoading(false);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <PaymentElement />
+      <button type="submit" disabled={!stripe || loading} className="w-full bg-blue-600 text-white py-2 rounded">
+        {loading ? 'Processing...' : 'Pay'}
+      </button>
+    </form>
+  );
+}
 
 interface BookingResult {
   success: boolean;
@@ -40,6 +83,11 @@ export default function BookingPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<BookingResult | null>(null);
+  const [paymentOptions, setPaymentOptions] = useState<any>(null);
+  const [showPayment, setShowPayment] = useState(false);
+  const stripePromise = (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
+    ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
+    : null;
   const [formData, setFormData] = useState({
     roomType: "overwater room",
     checkInDate: "",
@@ -107,11 +155,39 @@ export default function BookingPage() {
       }
 
       setResult(data);
+      // If server returned a client_secret from Stripe, open payment modal
+      if ((data as any).client_secret) {
+        setPaymentOptions({ clientSecret: (data as any).client_secret });
+        setShowPayment(true);
+      }
       toast.dismiss(loadingToast);
       toast.success("Booking processed successfully!");
     } catch (error) {
       toast.dismiss(loadingToast);
       toast.error(error instanceof Error ? error.message : "An error occurred");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Create payment intent and show payment element
+  const handlePay = async () => {
+    if (!result) return;
+    try {
+      setIsLoading(true);
+      const resp = await fetch('/api/stripe/create-payment-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: result.curated_package.total, currency: 'usd', metadata: { booking: 'lina-point' } }),
+      });
+
+      const data = await resp.json();
+      if (!resp.ok || data.error) throw new Error(data.error || 'Failed to create payment intent');
+
+      setPaymentOptions({ clientSecret: data.client_secret });
+      setShowPayment(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Payment setup failed');
     } finally {
       setIsLoading(false);
     }
@@ -384,6 +460,13 @@ export default function BookingPage() {
                   >
                     Book Direct & Save {result.savings_percent}%
                   </a>
+                  <button
+                    onClick={handlePay}
+                    disabled={isLoading || !stripePromise}
+                    className="ml-4 inline-block px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors"
+                  >
+                    {isLoading ? 'Setting up payment...' : 'Pay Securely'}
+                  </button>
                 </div>
 
                 {/* Tours */}
@@ -447,6 +530,19 @@ export default function BookingPage() {
                   ))}
                 </ul>
               </div>
+
+              {/* Payment Element Modal (simple inline) */}
+              {showPayment && paymentOptions && stripePromise ? (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+                  <div className="bg-white rounded-lg p-6 max-w-lg w-full">
+                    <h3 className="text-lg font-bold mb-4">Complete Payment</h3>
+                    <Elements stripe={stripePromise} options={{ clientSecret: paymentOptions.clientSecret }}>
+                      <CheckoutForm onSuccess={() => { setShowPayment(false); toast.success('Payment successful!'); }} />
+                    </Elements>
+                    <button onClick={() => setShowPayment(false)} className="mt-4 text-sm text-gray-600">Cancel</button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
         </div>
