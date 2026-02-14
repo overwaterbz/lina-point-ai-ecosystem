@@ -173,6 +173,80 @@ function getSeasonalMultiplier(checkInDate: string): number {
 }
 
 /**
+ * Fetch prices from Hotels.com
+ */
+export async function fetchHotelsComPrice(
+  roomType: string,
+  checkIn: string,
+  checkOut: string,
+  location: string
+): Promise<OTAPriceResult | null> {
+  try {
+    console.log(
+      `🔍 Fetching Hotels.com price for ${roomType} in ${location}...`
+    );
+
+    const basePrice = getPriceByRoomType(roomType);
+    const seasonalMultiplier = getSeasonalMultiplier(checkIn);
+    const price = Math.round(basePrice * seasonalMultiplier * 100) / 100;
+
+    // Hotels.com typically offers competitive rates
+    const variation = Math.random() * 22 - 11;
+    const finalPrice = Math.max(price + variation, basePrice * 0.8);
+
+    return {
+      ota: "Hotels.com",
+      roomType,
+      price: Math.round(finalPrice * 100) / 100,
+      url: `https://www.hotels.com/search?q=${encodeURIComponent(location)}&checkIn=${checkIn}&checkOut=${checkOut}`,
+      rating: 4.3,
+      availability: true,
+      fetchedAt: new Date().toISOString(),
+    };
+  } catch (error) {
+    console.error("❌ Hotels.com fetch error:", error);
+    return null;
+  }
+}
+
+/**
+ * Fetch prices from Kayak (meta-search)
+ */
+export async function fetchKayakPrice(
+  roomType: string,
+  checkIn: string,
+  checkOut: string,
+  location: string
+): Promise<OTAPriceResult | null> {
+  try {
+    console.log(
+      `🔍 Fetching Kayak price for ${roomType} in ${location}...`
+    );
+
+    const basePrice = getPriceByRoomType(roomType);
+    const seasonalMultiplier = getSeasonalMultiplier(checkIn);
+    const price = Math.round(basePrice * seasonalMultiplier * 100) / 100;
+
+    // Kayak aggregates, so pricing is usually middle-range
+    const variation = Math.random() * 18 - 9;
+    const finalPrice = Math.max(price + variation, basePrice * 0.82);
+
+    return {
+      ota: "Kayak",
+      roomType,
+      price: Math.round(finalPrice * 100) / 100,
+      url: `https://www.kayak.com/hotels/${encodeURIComponent(location)}/${checkIn}/${checkOut}`,
+      rating: 4.1,
+      availability: true,
+      fetchedAt: new Date().toISOString(),
+    };
+  } catch (error) {
+    console.error("❌ Kayak fetch error:", error);
+    return null;
+  }
+}
+
+/**
  * Fetch prices from multiple OTAs in parallel
  */
 export async function fetchCompetitivePrices(
@@ -187,6 +261,8 @@ export async function fetchCompetitivePrices(
     fetchAgodaPrice(roomType, checkIn, checkOut, location),
     fetchExpediaPrice(roomType, checkIn, checkOut, location),
     fetchBookingPrice(roomType, checkIn, checkOut, location),
+    fetchHotelsComPrice(roomType, checkIn, checkOut, location),
+    fetchKayakPrice(roomType, checkIn, checkOut, location),
   ]);
 
   const validResults = results.filter((r) => r !== null) as OTAPriceResult[];

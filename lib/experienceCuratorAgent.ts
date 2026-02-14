@@ -1,4 +1,5 @@
 // LangGraph-based Experience Curator Agent with tour curation workflow
+import { curatToursWithGrok } from "./grokIntegration";
 
 export interface UserPreferences {
   interests: string[];
@@ -8,7 +9,7 @@ export interface UserPreferences {
 
 interface TourOption {
   name: string;
-  type: "fishing" | "snorkeling" | "mainland" | "dining";
+  type: "fishing" | "snorkeling" | "mainland" | "dining" | "kayaking" | "adventure" | "cultural";
   price: number;
   description: string;
   duration: string;
@@ -111,6 +112,93 @@ const mockTours: Record<string, TourOption[]> = {
       url: "https://belize-tours.com/culinary?aff=lina-point",
     },
   ],
+  kayaking: [
+    {
+      name: "Mangrove Kayak Adventure",
+      type: "kayaking",
+      price: 95,
+      description: "Paddle through pristine mangrove channels, spot wildlife and manatees",
+      duration: "3 hours",
+      affiliate: true,
+      url: "https://belize-tours.com/kayak?aff=lina-point",
+    },
+    {
+      name: "Half-Day Sea Kayak & Snorkel",
+      type: "kayaking",
+      price: 145,
+      description: "Explore coastal caves, secluded islands, and shallow reefs",
+      duration: "4 hours",
+      affiliate: true,
+      url: "https://belize-tours.com/sea-kayak?aff=lina-point",
+    },
+    {
+      name: "Full-Day Kayak Expedition",
+      type: "kayaking",
+      price: 220,
+      description: "Expert-guided paddle through multiple ecosystems with lunch",
+      duration: "8 hours",
+      affiliate: true,
+      url: "https://belize-tours.com/kayak-expedition?aff=lina-point",
+    },
+  ],
+  adventure: [
+    {
+      name: "Zip Line Canopy Tour",
+      type: "adventure",
+      price: 125,
+      description: "Thrilling zip line course through rainforest canopy",
+      duration: "3 hours",
+      affiliate: true,
+      url: "https://belize-tours.com/zipline?aff=lina-point",
+    },
+    {
+      name: "Caving & Underground River",
+      type: "adventure",
+      price: 155,
+      description: "Explore crystal caves with underground rivers and Mayan artifacts",
+      duration: "5 hours",
+      affiliate: true,
+      url: "https://belize-tours.com/cave-tubing?aff=lina-point",
+    },
+    {
+      name: "Rock Climbing & Rappelling",
+      type: "adventure",
+      price: 140,
+      description: "Guided rock climbing on natural formations with safety equipment",
+      duration: "4 hours",
+      affiliate: true,
+      url: "https://belize-tours.com/climbing?aff=lina-point",
+    },
+  ],
+  cultural: [
+    {
+      name: "Garinagu Settlement Day Tour",
+      type: "cultural",
+      price: 110,
+      description: "Experience Garinagu culture, reenactments, music, and traditional food",
+      duration: "6 hours",
+      affiliate: true,
+      url: "https://belize-tours.com/garinagu?aff=lina-point",
+    },
+    {
+      name: "Live Music & Dance Experience",
+      type: "cultural",
+      price: 75,
+      description: "Enjoy traditional Creole, Punta, and Paranda music with local performers",
+      duration: "3 hours",
+      affiliate: false,
+      url: "https://belize-restaurants.com/music?aff=lina-point",
+    },
+    {
+      name: "Indigenous Village Visit",
+      type: "cultural",
+      price: 130,
+      description: "Meet Mayan families, learn traditional crafts, share authentic meals",
+      duration: "7 hours",
+      affiliate: true,
+      url: "https://belize-tours.com/village?aff=lina-point",
+    },
+  ],
 };
 
 // LangGraph Workflow: Analyze Prefs → Search Tours → Select Best → Generate Affiliate Links → Finalize
@@ -120,25 +208,52 @@ export async function runExperienceCurator(
   budget: number
 ): Promise<CuratedExperience> {
   console.log("[ExperienceCuratorAgent] Starting workflow");
-  console.log(`[ExperienceCuratorAgent] Preferences: ${JSON.stringify(userPreferences)}`);
-  console.log(`[ExperienceCuratorAgent] Group Size: ${groupSize}, Budget: $${budget}`);
+  console.log(
+    `[ExperienceCuratorAgent] Preferences: ${JSON.stringify(userPreferences)}`
+  );
+  console.log(
+    `[ExperienceCuratorAgent] Group Size: ${groupSize}, Budget: $${budget}`
+  );
+
+  // Node 0: Consult Grok for AI-powered recommendations (if API key configured)
+  let grokRecommendations: string[] = [];
+  if (process.env.GROK_API_KEY) {
+    try {
+      console.log("[ExperienceCuratorAgent] Consulting Grok for tour recommendations...");
+      const grokResult = await curatToursWithGrok(userPreferences, groupSize, budget);
+      grokRecommendations = grokResult.tour_selection;
+      console.log(
+        `[ExperienceCuratorAgent] Grok suggests: ${grokRecommendations.join(", ")}`
+      );
+    } catch (error) {
+      console.warn("[ExperienceCuratorAgent] Grok consultation failed, using default selection");
+    }
+  }
 
   // Node 1: Search for available tours based on preferences
   console.log("[ExperienceCuratorAgent] Searching available tours...");
 
   const recommendedTypes = userPreferences.interests.length > 0
-    ? (userPreferences.interests as Array<"fishing" | "snorkeling" | "mainland" | "dining">)
-    : (["snorkeling", "dining"] as const);
+    ? (userPreferences.interests as Array<
+        | "fishing"
+        | "snorkeling"
+        | "mainland"
+        | "dining"
+        | "kayaking"
+        | "adventure"
+        | "cultural"
+      >)
+    : (["snorkeling", "dining", "kayaking"] as const);
 
   const tourOptions: TourOption[] = [];
 
   for (const type of recommendedTypes) {
-    if (mockTours[type]) {
-      const filtered = mockTours[type].filter((tour) =>
+    if (mockTours[type as keyof typeof mockTours]) {
+      const filtered = mockTours[type as keyof typeof mockTours].filter((tour) =>
         userPreferences.budget === "budget"
-          ? tour.price < 200
+          ? tour.price < 150
           : userPreferences.budget === "mid"
-            ? tour.price >= 200 && tour.price < 400
+            ? tour.price >= 150 && tour.price < 350
             : true
       );
       tourOptions.push(...filtered);
@@ -153,22 +268,54 @@ export async function runExperienceCurator(
   const selectedTours: TourOption[] = [];
   let totalPrice = 0;
 
-  // Always include one snorkeling tour if available
-  const snorkeling = tourOptions.find((t) => t.type === "snorkeling");
-  if (snorkeling && totalPrice + snorkeling.price <= budget * 0.6) {
-    selectedTours.push(snorkeling);
-    totalPrice += snorkeling.price;
-    console.log(`[ExperienceCuratorAgent] Selected: ${snorkeling.name} ($${snorkeling.price})`);
+  // Prioritize Grok recommendations
+  for (const grokTourName of grokRecommendations) {
+    const grokTour = tourOptions.find((t) =>
+      t.name.toLowerCase().includes(grokTourName.toLowerCase())
+    );
+    if (
+      grokTour &&
+      !selectedTours.includes(grokTour) &&
+      totalPrice + grokTour.price <= budget * 0.7
+    ) {
+      selectedTours.push(grokTour);
+      totalPrice += grokTour.price;
+      console.log(
+        `[ExperienceCuratorAgent] Selected (Grok): ${grokTour.name} ($${grokTour.price})`
+      );
+    }
   }
 
-  // Add one more tour based on interests
-  for (const tour of tourOptions) {
-    if (!selectedTours.includes(tour) && totalPrice + tour.price <= budget * 0.8) {
-      selectedTours.push(tour);
-      totalPrice += tour.price;
-      console.log(`[ExperienceCuratorAgent] Selected: ${tour.name} ($${tour.price})`);
-      break;
+  // Fallback: Always include one diverse experience if budget allows
+  if (selectedTours.length === 0) {
+    // Try to get one snorkeling
+    const snorkeling = tourOptions.find((t) => t.type === "snorkeling");
+    if (snorkeling && totalPrice + snorkeling.price <= budget * 0.6) {
+      selectedTours.push(snorkeling);
+      totalPrice += snorkeling.price;
+      console.log(
+        `[ExperienceCuratorAgent] Selected: ${snorkeling.name} ($${snorkeling.price})`
+      );
     }
+
+    // Add one more tour based on interests
+    for (const tour of tourOptions) {
+      if (!selectedTours.includes(tour) && totalPrice + tour.price <= budget * 0.8) {
+        selectedTours.push(tour);
+        totalPrice += tour.price;
+        console.log(`[ExperienceCuratorAgent] Selected: ${tour.name} ($${tour.price})`);
+        break;
+      }
+    }
+  }
+
+  // If still no selections, pick something
+  if (selectedTours.length === 0 && tourOptions.length > 0) {
+    selectedTours.push(tourOptions[0]);
+    totalPrice = tourOptions[0].price;
+    console.log(
+      `[ExperienceCuratorAgent] Selected (default): ${tourOptions[0].name} ($${tourOptions[0].price})`
+    );
   }
 
   // Always add a dining experience

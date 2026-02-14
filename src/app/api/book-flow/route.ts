@@ -183,6 +183,46 @@ export async function POST(request: NextRequest): Promise<NextResponse<BookFlowR
       recommendations: curatorResult.recommendations,
     };
 
+    // 📊 Track analytics for booking analysis
+    const totalAffiliateCommission = curatorResult.affiliateLinks.reduce(
+      (sum: number, link: any) => sum + (link.commission || 0),
+      0
+    );
+
+    // A/B testing variant selection (based on user ID)
+    const experimentVariants = ["control", "variant_a", "variant_b"];
+    const experimentVariant = experimentVariants[user.id.charCodeAt(0) % experimentVariants.length];
+
+    try {
+      const { error: analyticsError } = await supabase
+        .from("booking_analytics")
+        .insert({
+          user_id: user.id,
+          room_type: body.roomType,
+          check_in_date: body.checkInDate,
+          check_out_date: body.checkOutDate,
+          original_price: priceScoutResult.bestPrice,
+          beat_price: priceScoutResult.beatPrice,
+          savings_percent: priceScoutResult.savingsPercent,
+          best_ota: priceScoutResult.bestOTA,
+          selected_tours: curatorResult.tours.map((t: any) => t.name),
+          total_cost: response.curated_package.total,
+          affiliate_commission: totalAffiliateCommission,
+          experiment_variant: experimentVariant,
+          grok_used: !!process.env.GROK_API_KEY,
+          created_at: new Date(),
+        });
+
+      if (analyticsError) {
+        console.warn("[BookFlow] Analytics tracking failed:", analyticsError.message);
+      } else {
+        console.log(`[BookFlow] Analytics tracked for user ${user.id}`);
+      }
+    } catch (analyticsErr) {
+      console.warn("[BookFlow] Error saving analytics:", analyticsErr);
+      // Don't fail the response if analytics fails
+    }
+
     return NextResponse.json(response, { status: 200 });
   } catch (error) {
     console.error("[BookFlow] Error:", error);
