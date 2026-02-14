@@ -17,6 +17,7 @@
     "@supabase/supabase-js": "^2.95.3",
     "axios": "^1.13.5",
     "dotenv": "^17.3.1",
+    "langchain": "^1.2.24",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
