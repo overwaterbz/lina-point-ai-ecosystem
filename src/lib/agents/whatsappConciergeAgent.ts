@@ -1,6 +1,8 @@
 import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
 import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { grokLLM } from '@/lib/grokIntegration';
+import { runWithRecursion } from '@/lib/agents/agentRecursion';
+import { evaluateTextQuality } from '@/lib/agents/recursionEvaluators';
 
 export interface WhatsAppProfile {
   user_id?: string | null;
@@ -39,11 +41,12 @@ const ConciergeState = Annotation.Root({
   phone: Annotation<string>,
   profile: Annotation<WhatsAppProfile | null>,
   sessionContext: Annotation<WhatsAppSessionContext>,
+  refinementHint: Annotation<string | undefined>,
   replyText: Annotation<string>,
   action: Annotation<{ type: 'book_flow' | 'magic_content'; payload?: Record<string, any> } | null>,
 });
 
-function buildSystemPrompt(profile: WhatsAppProfile | null) {
+function buildSystemPrompt(profile: WhatsAppProfile | null, refinementHint?: string) {
   const prefs = profile
     ? {
         birthday: profile.birthday,
@@ -55,9 +58,11 @@ function buildSystemPrompt(profile: WhatsAppProfile | null) {
       }
     : {};
 
+  const refinement = refinementHint ? ` Refinement: ${refinementHint}` : '';
+
   return `You are Maya Guide at Lina Point Resort. Use user preferences for personalization: ${JSON.stringify(
     prefs
-  )}. Promote direct bookings, magic experiences (songs, videos, packages), and save commissions. Keep replies short, friendly, and conversational for WhatsApp. Ask for missing details briefly.`;
+  )}. Promote direct bookings, magic experiences (songs, videos, packages), and save commissions. Keep replies short, friendly, and conversational for WhatsApp. Ask for missing details briefly.${refinement}`;
 }
 
 function detectAction(message: string, context: WhatsAppSessionContext) {
@@ -114,8 +119,8 @@ export async function runWhatsAppConciergeAgent(
 ): Promise<WhatsAppAgentOutput> {
   const graph = new StateGraph(ConciergeState)
     .addNode('respond', async (state) => {
-      const systemPrompt = buildSystemPrompt(state.profile);
-      const history = state.sessionContext.messages.slice(-6).map((msg) =>
+      const systemPrompt = buildSystemPrompt(state.profile, state.refinementHint);
+      const history = state.sessionContext.messages.slice(-5).map((msg) =>
         msg.role === 'user'
           ? new HumanMessage(msg.content)
           : new AIMessage(msg.content)
@@ -142,12 +147,27 @@ export async function runWhatsAppConciergeAgent(
     .addEdge(START, 'respond')
     .addEdge('respond', END);
 
-  const result = await graph.compile().invoke({
+  const initialState = {
     message: input.message,
     phone: input.phone,
     profile: input.profile,
     sessionContext: input.sessionContext,
-  });
+    refinementHint: undefined,
+  };
+
+  const { result } = await runWithRecursion(
+    async () => graph.compile().invoke(initialState),
+    async (state) => {
+      const goal = 'Provide a short, friendly WhatsApp reply that moves the conversation forward.';
+      const summary = `Reply: ${state.replyText}`;
+      const evalResult = await evaluateTextQuality(goal, summary);
+      return { score: evalResult.score, feedback: evalResult.feedback, data: state };
+    },
+    async (state, feedback, iteration) => ({
+      ...state,
+      refinementHint: `Iteration ${iteration + 1}: ${feedback || 'Be shorter and ask one clear question.'}`,
+    })
+  );
 
   const updatedContext: WhatsAppSessionContext = {
     ...input.sessionContext,

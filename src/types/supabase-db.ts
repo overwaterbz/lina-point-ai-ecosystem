@@ -19,6 +19,115 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+      magic_content: {
+        Row: {
+          id: string;
+          user_id: string;
+          reservation_id: string | null;
+          content_type: string;
+          title: string;
+          description: string | null;
+          genre: string | null;
+          prompt: string | null;
+          media_url: string;
+          duration_seconds: number | null;
+          file_size_bytes: number | null;
+          status: string | null;
+          error_message: string | null;
+          generation_provider: string | null;
+          processing_time_ms: number | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          reservation_id?: string | null;
+          content_type: string;
+          title: string;
+          description?: string | null;
+          genre?: string | null;
+          prompt?: string | null;
+          media_url: string;
+          duration_seconds?: number | null;
+          file_size_bytes?: number | null;
+          status?: string | null;
+          error_message?: string | null;
+          generation_provider?: string | null;
+          processing_time_ms?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          reservation_id?: string | null;
+          content_type?: string;
+          title?: string;
+          description?: string | null;
+          genre?: string | null;
+          prompt?: string | null;
+          media_url?: string;
+          duration_seconds?: number | null;
+          file_size_bytes?: number | null;
+          status?: string | null;
+          error_message?: string | null;
+          generation_provider?: string | null;
+          processing_time_ms?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      magic_questionnaire: {
+        Row: {
+          id: string;
+          user_id: string;
+          reservation_id: string | null;
+          occasion: string | null;
+          recipient_name: string | null;
+          gift_you_name: string | null;
+          key_memories: string | null;
+          favorite_colors: string | null;
+          favorite_songs_artists: string | null;
+          message: string | null;
+          music_style: string | null;
+          mood: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          reservation_id?: string | null;
+          occasion?: string | null;
+          recipient_name?: string | null;
+          gift_you_name?: string | null;
+          key_memories?: string | null;
+          favorite_colors?: string | null;
+          favorite_songs_artists?: string | null;
+          message?: string | null;
+          music_style?: string | null;
+          mood?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          reservation_id?: string | null;
+          occasion?: string | null;
+          recipient_name?: string | null;
+          gift_you_name?: string | null;
+          key_memories?: string | null;
+          favorite_colors?: string | null;
+          favorite_songs_artists?: string | null;
+          message?: string | null;
+          music_style?: string | null;
+          mood?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
       agent_runs: {
         Row: {
           id: string;
@@ -58,6 +167,26 @@ export interface Database {
           started_at?: string | null;
           finished_at?: string | null;
           duration_ms?: number | null;
+        };
+      };
+      agent_prompts: {
+        Row: {
+          id: string;
+          agent_name: string;
+          prompt_text: string;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          agent_name: string;
+          prompt_text: string;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          agent_name?: string;
+          prompt_text?: string;
+          updated_at?: string | null;
         };
       };
       profiles: {
@@ -154,6 +283,7 @@ export interface Database {
           user_id: string | null;
           last_message: string | null;
           context: Json | null;
+          last_messages: Json | null;
           last_inbound_at: string | null;
           last_outbound_at: string | null;
           created_at: string | null;
@@ -165,6 +295,7 @@ export interface Database {
           user_id?: string | null;
           last_message?: string | null;
           context?: Json | null;
+          last_messages?: Json | null;
           last_inbound_at?: string | null;
           last_outbound_at?: string | null;
           created_at?: string | null;
@@ -176,6 +307,7 @@ export interface Database {
           user_id?: string | null;
           last_message?: string | null;
           context?: Json | null;
+          last_messages?: Json | null;
           last_inbound_at?: string | null;
           last_outbound_at?: string | null;
           created_at?: string | null;

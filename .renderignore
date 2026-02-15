@@ -1,0 +1,38 @@
+# Render-specific ignore for faster deployments
+
+.git
+.gitignore
+node_modules
+.next
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+npm-debug.log
+yarn-error.log
+coverage
+.pytest_cache
+__pycache__
+.vscode
+.idea
+*.log
+.DS_Store
+Thumbs.db
+
+# Documentation files
+README.md
+QUICKSTART.md
+ARCHITECTURE.md
+BOOKING_*.md
+IMPLEMENTATION_SUMMARY.md
+INTEGRATION_SUMMARY.md
+SETUP_CHECKLIST.md
+SUPABASE_*.md
+USAGE_PATTERNS.md
+FILE_INDEX.md
+ENHANCEMENTS_SUMMARY.md
+AGENT_MODIFICATIONS_GUIDE.md
+
+# Test files
+test-*.ts
+scripts/

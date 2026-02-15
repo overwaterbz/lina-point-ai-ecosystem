@@ -7,7 +7,7 @@ import { normalizePhoneNumber, sendWhatsAppMessage } from '@/lib/whatsapp';
 import { runPriceScout } from '@/lib/priceScoutAgent';
 import { runExperienceCurator } from '@/lib/experienceCuratorAgent';
 import { createAgentRun, finishAgentRun } from '@/lib/agents/agentRunLogger';
-import { runContentAgent } from '@/lib/contentAgent';
+import { generateMagicContent } from '@/lib/magicContent';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -71,7 +71,9 @@ export async function POST(request: NextRequest) {
       .eq('phone_number', phone)
       .maybeSingle();
 
-    const sessionContext = (existingSession?.context as any) || { messages: [], pending_action: null };
+    const existingContext = (existingSession?.context as any) || { messages: [], pending_action: null };
+    const sessionMessages = (existingSession?.last_messages as any) || existingContext.messages || [];
+    const sessionContext = { ...existingContext, messages: sessionMessages };
 
     let sessionId = existingSession?.id || null;
     const nowIso = new Date().toISOString();
@@ -84,6 +86,7 @@ export async function POST(request: NextRequest) {
           user_id: profile?.user_id || null,
           last_message: message,
           context: sessionContext,
+          last_messages: sessionContext.messages,
           last_inbound_at: nowIso,
           updated_at: nowIso,
         })
@@ -283,17 +286,17 @@ export async function POST(request: NextRequest) {
           console.warn('[WhatsApp] Failed to create Magic run:', logError);
         }
 
-        const contentResult = await runContentAgent(
-          data.reservationId,
-          profile,
-          data.occasion,
-          data.genre || 'ambient'
-        );
+        const contentResult = await generateMagicContent(supabase as any, {
+          userId: profile.user_id,
+          reservationId: data.reservationId,
+          occasion: data.occasion,
+          musicStyle: data.genre || 'ambient',
+        }, profile);
 
         if (magicRunId) {
           try {
             await finishAgentRun(supabase as any, magicRunId, {
-              status: contentResult.status === 'completed' ? 'completed' : 'failed',
+              status: 'completed',
               output: contentResult,
               duration_ms: Date.now() - runStart,
             });
@@ -301,24 +304,12 @@ export async function POST(request: NextRequest) {
             console.warn('[WhatsApp] Failed to finalize Magic run:', logError);
           }
         }
-
-        await supabase.from('magic_content').insert({
-          reservation_id: data.reservationId,
-          user_id: profile.user_id,
-          occasion: data.occasion,
-          genre: data.genre || 'ambient',
-          content_type: 'both',
-          status: contentResult.status,
-          song_url: contentResult.songUrl,
-          video_url: contentResult.videoUrl,
-          artwork_url: contentResult.artworkUrl,
-          suno_track_id: contentResult.sunoTrackId,
-          suno_grok_prompt: contentResult.grokPrompt,
-          error_message: contentResult.errorMessage || null,
-          user_prefs: profile,
-        });
-
-        replyText = `Your magic is ready. Song: ${contentResult.songUrl} Video: ${contentResult.videoUrl}`;
+        const songUrl = contentResult.items.find((item) => item.contentType === 'song')?.mediaUrl;
+        const videoUrl = contentResult.items.find((item) => item.contentType === 'video')?.mediaUrl;
+        const parts = [songUrl ? `Song: ${songUrl}` : null, videoUrl ? `Video: ${videoUrl}` : null].filter(Boolean);
+        replyText = parts.length > 0
+          ? `Your magic is ready. ${parts.join(' ')}`
+          : 'Your magic is in progress. I will follow up soon.';
       }
     }
 
@@ -334,7 +325,7 @@ export async function POST(request: NextRequest) {
       trimmedContext.pending_action = null;
     }
 
-    trimmedContext.messages = trimmedContext.messages.slice(-10);
+    trimmedContext.messages = trimmedContext.messages.slice(-5);
 
     await supabase
       .from('whatsapp_sessions')
@@ -344,6 +335,7 @@ export async function POST(request: NextRequest) {
         user_id: profile?.user_id || null,
         last_message: message,
         context: trimmedContext,
+        last_messages: trimmedContext.messages,
         last_inbound_at: nowIso,
         updated_at: nowIso,
       });

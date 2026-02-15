@@ -4,6 +4,8 @@
  */
 
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
+import { runWithRecursion } from "@/lib/agents/agentRecursion";
+import { evaluateTextQuality } from "@/lib/agents/recursionEvaluators";
 
 // OTA mock data for Lina Point Overwater Room prices
 const OTA_DATA = {
@@ -25,6 +27,8 @@ export interface PriceScoutResult {
   iterations: number;
   priceUrl: string;
   allPrices: Record<string, number>;
+  confidenceScore?: number;
+  confidenceFeedback?: string;
 }
 
 // State for LangGraph recursion
@@ -185,8 +189,19 @@ export async function runPriceScout(
     refinementNotes: "Starting price scout search...",
   };
 
-  // Execute graph with recursion
-  const finalState = await graph.invoke(initialState);
+  const { result: finalState, score, feedback, iterations } = await runWithRecursion(
+    async () => graph.invoke(initialState),
+    async (state) => {
+      const goal = "Find the best OTA price and calculate a clear beat price.";
+      const summary = `Best OTA: ${state.bestOTA} Price: ${state.bestPrice} Beat: ${state.beatPrice}`;
+      const evalResult = await evaluateTextQuality(goal, summary);
+      return { score: evalResult.score, feedback: evalResult.feedback, data: state };
+    },
+    async (state) => ({
+      ...state,
+      iteration: Math.min(state.iteration + 1, 3),
+    })
+  );
 
   console.log(`✅ [PriceScout] Complete. Best OTA: ${finalState.bestOTA} @ $${finalState.bestPrice}`);
   console.log(`💰 [PriceScout] Direct booking price: $${finalState.beatPrice} (Save 3%!)`);
@@ -197,9 +212,11 @@ export async function runPriceScout(
     beatPrice: finalState.beatPrice,
     savingsPercent: 3,
     savings: Math.round((finalState.bestPrice - finalState.beatPrice) * 100) / 100,
-    iterations: finalState.iteration,
+    iterations,
     priceUrl: `https://linapoint.com/book?check_in=${checkInDate}&check_out=${checkOutDate}&guests=2&room_type=${roomType}`,
     allPrices: finalState.allPrices,
+    confidenceScore: score,
+    confidenceFeedback: feedback,
   };
 }
 

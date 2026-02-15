@@ -4,6 +4,8 @@
  */
 
 import { grokLLM } from "@/lib/grokIntegration";
+import { runWithRecursion } from "@/lib/agents/agentRecursion";
+import { evaluateTextQuality } from "@/lib/agents/recursionEvaluators";
 
 // Export for type reference in book-flow
 export interface UserPreferences {
@@ -284,10 +286,15 @@ function suggestAddons(prefs: UserPreferences, groupSize: number): CuratedExperi
 /**
  * Generate recommendations using Grok LLM
  */
-async function generateRecommendations(prefs: UserPreferences, groupSize: number): Promise<string[]> {
+async function generateRecommendations(
+  prefs: UserPreferences,
+  groupSize: number,
+  hint?: string
+): Promise<string[]> {
   try {
     const prompt = `As a Belize travel expert, provide 2-3 brief personalized recommendations for a ${groupSize}-person group with interests in: ${prefs.interests?.join(", ") || "general tourism"}. 
     Activity level: ${prefs.activityLevel || "medium"}. Budget tier: ${prefs.budget || "mid"}.
+    ${hint ? `Refinement: ${hint}` : ""}
     Return as JSON array of strings, max 100 chars each.`;
 
     const response = await grokLLM.invoke([
@@ -363,18 +370,34 @@ export async function runExperienceCurator(
     },
   ];
 
-  // Generate recommendations
-  const recommendations = await generateRecommendations(prefs, groupSize);
+  let recommendationHint = "";
+  const { result: curated } = await runWithRecursion(
+    async () => {
+      const recommendations = await generateRecommendations(prefs, groupSize, recommendationHint);
 
-  console.log(`✅ [Curator] Package created: ${tours.length} tours, ${addons.length} add-ons`);
-  console.log(`💰 [Curator] Total experience cost: $${totalPrice}`);
+      return {
+        tours,
+        dinner,
+        addons,
+        totalPrice,
+        recommendations,
+        affiliateLinks,
+      };
+    },
+    async (state) => {
+      const goal = "Provide concise, high-value tour recommendations.";
+      const summary = `Tours: ${state.tours.length}, Addons: ${state.addons.length}, Recs: ${state.recommendations.join(" | ")}`;
+      const evalResult = await evaluateTextQuality(goal, summary);
+      return { score: evalResult.score, feedback: evalResult.feedback, data: state };
+    },
+    async (state, feedback, iteration) => {
+      recommendationHint = `Iteration ${iteration + 1}: ${feedback || "Focus on conversion-focused phrasing."}`;
+      return state;
+    }
+  );
 
-  return {
-    tours,
-    dinner,
-    addons,
-    totalPrice,
-    recommendations,
-    affiliateLinks,
-  };
+  console.log(`✅ [Curator] Package created: ${curated.tours.length} tours, ${curated.addons.length} add-ons`);
+  console.log(`💰 [Curator] Total experience cost: $${curated.totalPrice}`);
+
+  return curated;
 }

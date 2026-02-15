@@ -1,6 +1,11 @@
 import type { Json } from '@/types/supabase-db';
 
-export type AgentName = 'price_scout' | 'experience_curator' | 'content_magic' | 'whatsapp_concierge';
+export type AgentName =
+  | 'price_scout'
+  | 'experience_curator'
+  | 'content_magic'
+  | 'whatsapp_concierge'
+  | 'self_improvement';
 
 export type AgentRunStatus = 'started' | 'completed' | 'failed';
 

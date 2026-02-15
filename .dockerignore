@@ -1,0 +1,62 @@
+# Reduce Docker build context size
+
+# Version control
+.git
+.gitignore
+.gitlab-ci.yml
+.github
+
+# Dependencies (rebuilt in Dockerfile)
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Development
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.next
+.swc
+.pytest_cache
+__pycache__
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage
+.nyc_output
+
+# Build artifacts
+dist
+build
+
+# Logs
+logs
+*.log
+
+# Misc
+README.md
+QUICKSTART.md
+ARCHITECTURE.md
+BOOKING_*.md
+IMPLEMENTATION_SUMMARY.md
+INTEGRATION_SUMMARY.md
+SETUP_CHECKLIST.md
+SUPABASE_*.md
+USAGE_PATTERNS.md
+FILE_INDEX.md
+ENHANCEMENTS_SUMMARY.md
+AGENT_MODIFICATIONS_GUIDE.md
+*.sql
+test-*.ts
+scripts/

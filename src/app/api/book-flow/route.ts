@@ -5,6 +5,7 @@ import { runExperienceCurator } from "@/lib/experienceCuratorAgent";
 import type { UserPreferences } from "@/lib/experienceCuratorAgent";
 import { randomUUID } from "crypto";
 import { createAgentRun, finishAgentRun } from "@/lib/agents/agentRunLogger";
+import { generateMagicContent } from "@/lib/magicContent";
 
 interface BookFlowRequest {
   roomType: string;
@@ -15,6 +16,7 @@ interface BookFlowRequest {
   tourBudget: number;
   interests?: string[];
   activityLevel?: "low" | "medium" | "high";
+  addOns?: string[];
 }
 
 interface BookFlowResponse {
@@ -246,9 +248,38 @@ export async function POST(request: NextRequest): Promise<NextResponse<BookFlowR
       status: "pending_payment",
     }));
 
-    const { error: tourInsertError } = await supabase.from("tour_bookings").insert(tourInserts);
+    const { data: tourRows, error: tourInsertError } = await supabase
+      .from("tour_bookings")
+      .insert(tourInserts)
+      .select("id");
     if (tourInsertError) {
       console.warn("[BookFlow] Failed to insert tour_bookings:", tourInsertError.message);
+    }
+
+    const reservationId = tourRows?.[0]?.id || null;
+
+    if (body.addOns?.includes("magic") && reservationId) {
+      try {
+        const { data: magicProfile } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        await generateMagicContent(
+          supabase as any,
+          {
+            userId: user.id,
+            reservationId,
+            occasion: "celebration",
+            musicStyle: magicProfile?.music_style || undefined,
+            userEmail: user.email,
+          },
+          magicProfile
+        );
+      } catch (magicError) {
+        console.warn("[BookFlow] Magic content generation failed:", magicError);
+      }
     }
 
     // Calculate dining price (assume included in package or add separately)

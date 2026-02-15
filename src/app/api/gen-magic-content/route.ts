@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { runContentAgent } from "@/lib/contentAgent";
+import { generateMagicContent } from "@/lib/magicContent";
 import { createAgentRun, finishAgentRun } from "@/lib/agents/agentRunLogger";
 
 // Server-only Supabase client
@@ -17,7 +17,11 @@ const supabase = createClient(
  * {
  *   "reservationId": "uuid",
  *   "occasion": "birthday|anniversary|proposal|renewal",
- *   "genre": "ambient|indie-pop|tropical-fusion" (default: ambient)
+ *   "musicStyle": "ambient|edm|tropical|reggae|calypso" (default: ambient)
+ *   "mood": "romantic|energetic|peaceful|celebratory" (default: romantic)
+ *   "recipientName": "string",
+ *   "giftYouName": "string",
+ *   "message": "string"
  * }
  */
 export async function POST(request: NextRequest) {
@@ -42,7 +46,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { reservationId, occasion, genre = "ambient" } = await request.json();
+    const {
+      reservationId,
+      occasion,
+      musicStyle,
+      mood,
+      recipientName,
+      giftYouName,
+      message,
+    } = await request.json();
 
     if (!reservationId || !occasion) {
       return NextResponse.json(
@@ -67,7 +79,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if reservation includes "magic" add-on
-    const magicIncluded = booking.add_ons?.includes("magic") ?? false;
+    const magicIncluded = Array.isArray((booking as any)?.add_ons)
+      ? (booking as any).add_ons.includes("magic")
+      : true;
     if (!magicIncluded) {
       return NextResponse.json(
         { error: "Magic add-on not included in reservation" },
@@ -93,39 +107,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const userPrefs = profile || {
-      name: user.user_metadata?.name || "Guest",
-      email: user.email,
-    };
-
     console.log(`[API] Generating magic content for ${reservationId}`);
-    console.log(`[API] Occasion: ${occasion}, Genre: ${genre}`);
-
-    // Create preliminary magic_content record
-    const { data: magicRecord, error: insertError } = await supabase
-      .from("magic_content")
-      .insert({
-        reservation_id: reservationId,
-        user_id: user.id,
-        occasion,
-        genre,
-        content_type: "both", // Song + Video
-        status: "processing",
-        user_prefs: userPrefs,
-      })
-      .select()
-      .single();
-
-    if (insertError) {
-      console.error("Failed to create magic record:", insertError);
-      return NextResponse.json(
-        { error: "Failed to create content record" },
-        { status: 500 }
-      );
-    }
+    console.log(`[API] Occasion: ${occasion}`);
 
     // Run ContentAgent
-    let contentResult;
+    let contentResult: Awaited<ReturnType<typeof generateMagicContent>> | null = null;
     let runId: string | null = null;
     const runStart = Date.now();
 
@@ -135,18 +121,31 @@ export async function POST(request: NextRequest) {
           user_id: user.id,
           agent_name: "content_magic",
           request_id: reservationId,
-          input: { reservationId, occasion, genre, userPrefs },
+          input: {
+            reservationId,
+            occasion,
+            musicStyle,
+            mood,
+            recipientName,
+            giftYouName,
+            message,
+          },
         });
       } catch (logError) {
         console.warn("Failed to create agent run:", logError);
       }
 
-      contentResult = await runContentAgent(
+      contentResult = await generateMagicContent(supabase as any, {
+        userId: user.id,
         reservationId,
-        userPrefs,
         occasion,
-        genre
-      );
+        musicStyle,
+        mood,
+        recipientName,
+        giftYouName,
+        message,
+        userEmail: user.email,
+      }, profile);
 
       if (runId) {
         try {
@@ -172,15 +171,6 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Update record with error
-      await supabase
-        .from("magic_content")
-        .update({
-          status: "failed",
-          error_message: agentError instanceof Error ? agentError.message : String(agentError),
-        })
-        .eq("id", magicRecord.id);
-
       return NextResponse.json(
         {
           success: false,
@@ -191,43 +181,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Update magic_content record with results
-    const { error: updateError } = await supabase
-      .from("magic_content")
-      .update({
-        status: contentResult.status,
-        song_url: contentResult.songUrl,
-        video_url: contentResult.videoUrl,
-        artwork_url: contentResult.artworkUrl,
-        suno_track_id: contentResult.sunoTrackId,
-        suno_grok_prompt: contentResult.grokPrompt,
-        error_message: contentResult.errorMessage || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", magicRecord.id);
-
-    if (updateError) {
-      console.error("Failed to update magic record:", updateError);
-    }
-
-    // Log URLs (would send email here in production)
-    console.log(`[API] Generated magic content:`);
-    console.log(`  Song: ${contentResult.songUrl}`);
-    console.log(`  Video: ${contentResult.videoUrl}`);
-    console.log(`  Artwork: ${contentResult.artworkUrl}`);
-
     return NextResponse.json({
-      success: contentResult.status === "completed",
-      magicId: magicRecord.id,
-      media: {
-        song_url: contentResult.songUrl,
-        video_url: contentResult.videoUrl,
-        artwork_url: contentResult.artworkUrl,
-      },
-      message: contentResult.status === "completed"
-        ? `✨ "${contentResult.grokPrompt && JSON.parse(contentResult.grokPrompt).title || 'Your Song'}" created! Download your personalized magic content.`
-        : contentResult.errorMessage,
-      status: contentResult.status,
+      success: true,
+      items: contentResult?.items || [],
+      message: "Magic content generation started",
     });
 
   } catch (error) {

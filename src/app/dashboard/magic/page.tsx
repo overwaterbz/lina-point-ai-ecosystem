@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/hooks/useAuth";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
@@ -11,24 +10,21 @@ const supabaseClient = createBrowserSupabaseClient();
 
 interface MagicContent {
   id: string;
-  reservation_id: string;
-  occasion: string;
-  genre: string;
-  song_url: string;
-  video_url: string;
-  artwork_url: string;
+  reservation_id: string | null;
+  content_type: "song" | "video" | "audio_remix" | string;
+  title: string;
+  description?: string | null;
+  genre?: string | null;
+  media_url: string;
   status: "pending" | "processing" | "completed" | "failed";
   error_message?: string;
-  user_prefs: Record<string, any>;
   created_at: string;
 }
 
 export default function MagicPage() {
-  const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const [contents, setContents] = useState<MagicContent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -118,30 +114,18 @@ export default function MagicPage() {
                   key={content.id}
                   className="bg-white rounded-lg shadow-lg overflow-hidden hover:shadow-xl transition"
                 >
-                  {/* Artwork */}
-                  {content.artwork_url && (
-                    <div className="relative pb-full bg-gradient-to-br from-purple-200 to-indigo-300 h-48">
-                      <img
-                        src={content.artwork_url}
-                        alt={content.occasion}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = "none";
-                        }}
-                      />
-                    </div>
-                  )}
-
                   {/* Content Info */}
                   <div className="p-6">
                     <div className="flex items-start justify-between mb-4">
                       <div>
-                        <h3 className="text-lg font-bold text-gray-900 capitalize">
-                          {content.occasion} Celebration
+                        <h3 className="text-lg font-bold text-gray-900">
+                          {content.title || "Magic Moment"}
                         </h3>
-                        <p className="text-sm text-gray-600 capitalize">
-                          {content.genre}
-                        </p>
+                        {content.genre && (
+                          <p className="text-sm text-gray-600 capitalize">
+                            {content.genre}
+                          </p>
+                        )}
                       </div>
                       <span
                         className={`px-3 py-1 rounded-full text-xs font-semibold ${
@@ -161,6 +145,10 @@ export default function MagicPage() {
                       Created {new Date(content.created_at).toLocaleDateString()}
                     </p>
 
+                    {content.description && (
+                      <p className="text-sm text-gray-600 mb-4">{content.description}</p>
+                    )}
+
                     {/* Status Messages */}
                     {content.status === "failed" && content.error_message && (
                       <div className="bg-red-50 border border-red-200 rounded p-3 mb-4">
@@ -170,21 +158,20 @@ export default function MagicPage() {
 
                     {content.status === "completed" && (
                       <div className="space-y-2">
-                        {/* Song Player */}
-                        {content.song_url && (
+                        {(content.content_type === "song" || content.content_type === "audio_remix") && content.media_url && (
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                              🎵 Your Song
+                              🎵 Your Audio
                             </label>
                             <audio
                               controls
                               className="w-full"
-                              src={content.song_url}
+                              src={content.media_url}
                             >
                               Your browser does not support audio playback
                             </audio>
                             <button
-                              onClick={() => downloadFile(content.song_url, `${content.occasion}.mp3`)}
+                              onClick={() => downloadFile(content.media_url, `${content.title || 'magic'}.mp3`)}
                               className="mt-2 w-full px-3 py-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 text-sm font-medium transition"
                             >
                               ⬇ Download Song
@@ -192,8 +179,7 @@ export default function MagicPage() {
                           </div>
                         )}
 
-                        {/* Video Player */}
-                        {content.video_url && (
+                        {content.content_type === "video" && content.media_url && (
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
                               🎬 Your Video
@@ -201,12 +187,12 @@ export default function MagicPage() {
                             <video
                               controls
                               className="w-full rounded bg-black"
-                              src={content.video_url}
+                              src={content.media_url}
                             >
                               Your browser does not support video playback
                             </video>
                             <button
-                              onClick={() => downloadFile(content.video_url, `${content.occasion}.mp4`)}
+                              onClick={() => downloadFile(content.media_url, `${content.title || 'magic'}.mp4`)}
                               className="mt-2 w-full px-3 py-2 bg-purple-50 text-purple-600 rounded hover:bg-purple-100 text-sm font-medium transition"
                             >
                               ⬇ Download Video
@@ -219,9 +205,9 @@ export default function MagicPage() {
                           <button
                             onClick={() => {
                               navigator.share?.({
-                                title: `${content.occasion} Celebration`,
+                                title: content.title || "Magic Moment",
                                 text: "Check out my personalized magic content from Lina Point!",
-                                url: content.song_url,
+                                url: content.media_url,
                               });
                             }}
                             className="flex-1 px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 text-sm font-medium transition"
