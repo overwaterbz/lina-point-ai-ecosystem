@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 
+const isProd = process.env.NODE_ENV === 'production';
+const debugLog = (...args: unknown[]) => {
+  if (!isProd) {
+    console.log(...args);
+  }
+};
+
 // Vercel Cron endpoint: sends proactive messages at 6 PM UTC daily
 export async function GET(req: NextRequest) {
   try {
@@ -46,7 +53,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (!activeUsers || activeUsers.length === 0) {
-      console.log('[Cron] No eligible users for proactive messages');
+      debugLog('[Cron] No eligible users for proactive messages');
       return NextResponse.json({
         success: true,
         message: 'No eligible users',
@@ -54,7 +61,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    console.log(`[Cron] Found ${activeUsers.length} users for proactive messages`);
+    debugLog(`[Cron] Found ${activeUsers.length} users for proactive messages`);
 
     // Sample proactive messages based on user preferences
     const messageTemplates = [
@@ -105,7 +112,7 @@ export async function GET(req: NextRequest) {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
 
-    console.log(`[Cron] Sent: ${successCount}, Failed: ${failureCount}`);
+    debugLog(`[Cron] Sent: ${successCount}, Failed: ${failureCount}`);
 
     return NextResponse.json({
       success: true,

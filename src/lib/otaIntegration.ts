@@ -11,6 +11,13 @@ export interface OTAPrice {
   lastUpdated: Date;
 }
 
+const isProd = process.env.NODE_ENV === "production";
+const debugLog = (...args: unknown[]) => {
+  if (!isProd) {
+    console.log(...args);
+  }
+};
+
 /**
  * Fetch prices from external OTA APIs
  * Currently mocked, can integrate real APIs like:
@@ -25,7 +32,7 @@ export async function fetchCompetitivePrices(
   checkOutDate: string,
   location: string
 ): Promise<OTAPrice[]> {
-  console.log(`[OTA] Fetching prices for ${roomType} from OTAs...`);
+  debugLog(`[OTA] Fetching prices for ${roomType} from OTAs...`);
 
   // Mock data - replace with real API calls
   const mockPrices: OTAPrice[] = [

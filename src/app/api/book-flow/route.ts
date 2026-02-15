@@ -7,6 +7,13 @@ import { randomUUID } from "crypto";
 import { createAgentRun, finishAgentRun } from "@/lib/agents/agentRunLogger";
 import { generateMagicContent } from "@/lib/magicContent";
 
+const isProd = process.env.NODE_ENV === "production";
+const debugLog = (...args: unknown[]) => {
+  if (!isProd) {
+    console.log(...args);
+  }
+};
+
 interface BookFlowRequest {
   roomType: string;
   checkInDate: string;
@@ -100,14 +107,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<BookFlowR
             : "budget",
     };
 
-    console.log("[BookFlow] Starting agents for user:", user.id);
-    console.log("[BookFlow] Room Query:", body.roomType);
-    console.log("[BookFlow] User Preferences:", userPreferences);
+    debugLog("[BookFlow] Starting agents for user:", user.id);
+    debugLog("[BookFlow] Room Query:", body.roomType);
+    debugLog("[BookFlow] User Preferences:", userPreferences);
 
     const requestId = randomUUID();
 
     // Run PriceScout Agent
-    console.log("[BookFlow] Running PriceScout Agent...");
+    debugLog("[BookFlow] Running PriceScout Agent...");
     let priceRunId: string | null = null;
     const priceRunStart = Date.now();
     let priceScoutResult: Awaited<ReturnType<typeof runPriceScout>>;
@@ -162,10 +169,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<BookFlowR
       throw agentError;
     }
 
-    console.log("[BookFlow] PriceScout Result:", priceScoutResult);
+    debugLog("[BookFlow] PriceScout Result:", priceScoutResult);
 
     // Run ExperienceCurator Agent
-    console.log("[BookFlow] Running ExperienceCurator Agent...");
+    debugLog("[BookFlow] Running ExperienceCurator Agent...");
     let curatorRunId: string | null = null;
     const curatorRunStart = Date.now();
     let curatorResult: Awaited<ReturnType<typeof runExperienceCurator>>;
@@ -218,7 +225,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<BookFlowR
       throw agentError;
     }
 
-    console.log("[BookFlow] Curator Result:", curatorResult);
+    debugLog("[BookFlow] Curator Result:", curatorResult);
 
     // Save prices to database
     await supabase.from("prices").insert({
@@ -351,7 +358,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<BookFlowR
       if (analyticsError) {
         console.warn("[BookFlow] Analytics tracking failed:", analyticsError.message);
       } else {
-        console.log(`[BookFlow] Analytics tracked for user ${user.id}`);
+        debugLog(`[BookFlow] Analytics tracked for user ${user.id}`);
       }
     } catch (analyticsErr) {
       console.warn("[BookFlow] Error saving analytics:", analyticsErr);

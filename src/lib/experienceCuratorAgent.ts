@@ -337,7 +337,14 @@ export async function runExperienceCurator(
   groupSize: number,
   tourBudget: number
 ): Promise<CuratedExperience> {
-  console.log(`\n🎯 [Curator] Curating experiences for group of ${groupSize}...`);
+  const isProd = process.env.NODE_ENV === "production";
+  const debugLog = (...args: unknown[]) => {
+    if (!isProd) {
+      console.log(...args);
+    }
+  };
+
+  debugLog(`\n🎯 [Curator] Curating experiences for group of ${groupSize}...`);
 
   // Calculate budget per person
   const budgetPerPerson = tourBudget / groupSize;
@@ -396,8 +403,8 @@ export async function runExperienceCurator(
     }
   );
 
-  console.log(`✅ [Curator] Package created: ${curated.tours.length} tours, ${curated.addons.length} add-ons`);
-  console.log(`💰 [Curator] Total experience cost: $${curated.totalPrice}`);
+  debugLog(`✅ [Curator] Package created: ${curated.tours.length} tours, ${curated.addons.length} add-ons`);
+  debugLog(`💰 [Curator] Total experience cost: $${curated.totalPrice}`);
 
   return curated;
 }

@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+const isProd = process.env.NODE_ENV === 'production';
+const debugLog = (...args: unknown[]) => {
+  if (!isProd) {
+    console.log(...args);
+  }
+};
+
 export async function GET() {
   try {
     const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -28,14 +35,14 @@ export async function GET() {
         if (p.birthday) {
           const d = new Date(p.birthday);
           if (d.getUTCMonth() + 1 === todayMonth && d.getUTCDate() === todayDay) {
-            console.log(`Trigger magic gen for user ${p.user_id} (birthday)`);
+            debugLog(`Trigger magic gen for user ${p.user_id} (birthday)`);
             triggers.push({ user_id: p.user_id, reason: 'birthday' });
           }
         }
         if (p.anniversary) {
           const d2 = new Date(p.anniversary);
           if (d2.getUTCMonth() + 1 === todayMonth && d2.getUTCDate() === todayDay) {
-            console.log(`Trigger magic gen for user ${p.user_id} (anniversary)`);
+            debugLog(`Trigger magic gen for user ${p.user_id} (anniversary)`);
             triggers.push({ user_id: p.user_id, reason: 'anniversary' });
           }
         }

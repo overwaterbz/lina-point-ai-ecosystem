@@ -1,6 +1,13 @@
 import Stripe from 'stripe'
 import { NextResponse } from 'next/server'
 
+const isProd = process.env.NODE_ENV === 'production'
+const debugLog = (...args: unknown[]) => {
+  if (!isProd) {
+    console.log(...args)
+  }
+}
+
 export async function POST(req: Request) {
   const sig = req.headers.get('stripe-signature') || ''
   const text = await req.text()
@@ -30,7 +37,7 @@ export async function POST(req: Request) {
   switch (event.type) {
     case 'payment_intent.succeeded':
       const pi = event.data.object
-      console.log('PaymentIntent succeeded:', pi.id, 'amount:', pi.amount)
+      debugLog('PaymentIntent succeeded:', pi.id, 'amount:', pi.amount)
       try {
         const bookingId = pi.metadata?.booking_id
         if (bookingId) {
@@ -43,7 +50,7 @@ export async function POST(req: Request) {
             .eq('booking_id', bookingId)
 
           if (updateErr) console.warn('[Stripe Webhook] Failed to mark tours paid:', updateErr.message)
-          else console.log(`[Stripe Webhook] Marked tour_bookings paid for booking ${bookingId}`)
+          else debugLog(`[Stripe Webhook] Marked tour_bookings paid for booking ${bookingId}`)
         }
       } catch (webhookErr) {
         console.error('Error handling payment_intent.succeeded webhook:', webhookErr)
@@ -53,7 +60,7 @@ export async function POST(req: Request) {
       console.warn('Payment failed:', event.data.object)
       break
     default:
-      console.log(`Unhandled event type ${event.type}`)
+      debugLog(`Unhandled event type ${event.type}`)
   }
 
   return NextResponse.json({ received: true })

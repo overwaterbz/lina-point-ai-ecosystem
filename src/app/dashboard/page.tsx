@@ -20,7 +20,9 @@ export default function DashboardPage() {
       toast('Checking events...', { icon: '🔎' });
       const res = await fetch('/api/check-events');
       const data = await res.json();
-      console.log('check-events result', data);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('check-events result', data);
+      }
       toast.success(`Check complete: ${data.triggers?.length || 0} triggers`);
     } catch (err: any) {
       console.error('check-events error', err);

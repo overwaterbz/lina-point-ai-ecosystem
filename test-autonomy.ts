@@ -1,7 +1,9 @@
+import "dotenv/config";
 import axios from "axios";
 
-const API_BASE = "https://overwater.app.n8n.cloud/webhook-test/lina-magic-trigger";
-const n8nSecret = "S0ccer2!*212121";
+// REMOVED: hardcoded secrets and URLs - use env vars instead.
+const API_BASE = process.env.N8N_WEBHOOK_URL || "your-n8n-webhook-url-here";
+const n8nSecret = process.env.N8N_SECRET || "your-n8n-secret-here";
 
 async function triggerWorkflow() {
   console.log("\n=== Triggering n8n workflow stub ===\n");
@@ -10,7 +12,7 @@ async function triggerWorkflow() {
     "Content-Type": "application/json",
   };
 
-  if (n8nSecret && !n8nSecret.includes("REPLACE_WITH")) {
+  if (n8nSecret && !n8nSecret.includes("your-n8n-secret-here")) {
     headers["x-n8n-secret"] = n8nSecret;
   }
 
@@ -40,7 +42,7 @@ async function triggerLocalWorkflow() {
     "Content-Type": "application/json",
   };
 
-  if (n8nSecret && !n8nSecret.includes("REPLACE_WITH")) {
+  if (n8nSecret && !n8nSecret.includes("your-n8n-secret-here")) {
     headers["x-n8n-secret"] = n8nSecret;
   }
 

@@ -241,11 +241,13 @@ export default function BookingPage() {
     const loadingToast = toast.loading("Running agents... Price Scout & Experience Curator");
 
     try {
-      console.debug("[Book Flow] Starting booking with data:", {
-        roomType: formData.roomType,
-        guests: formData.groupSize,
-        dates: `${formData.checkInDate} to ${formData.checkOutDate}`,
-      });
+      if (process.env.NODE_ENV !== "production") {
+        console.debug("[Book Flow] Starting booking with data:", {
+          roomType: formData.roomType,
+          guests: formData.groupSize,
+          dates: `${formData.checkInDate} to ${formData.checkOutDate}`,
+        });
+      }
 
       const data: BookingResult = await fetchWithTimeout<BookingResult>(
         "/api/book-flow",
@@ -261,7 +263,9 @@ export default function BookingPage() {
         throw new Error(data.error || "Booking failed");
       }
 
-      console.debug("[Book Flow] Success:", { beatPrice: data.beat_price, total: data.curated_package.total });
+      if (process.env.NODE_ENV !== "production") {
+        console.debug("[Book Flow] Success:", { beatPrice: data.beat_price, total: data.curated_package.total });
+      }
       setResult(data);
 
       // If server returned a client_secret from Stripe, open payment modal
@@ -285,7 +289,9 @@ export default function BookingPage() {
     if (!result) return;
     try {
       setIsLoading(true);
-      console.debug("[Payment] Creating payment intent for amount:", result.curated_package.total);
+      if (process.env.NODE_ENV !== "production") {
+        console.debug("[Payment] Creating payment intent for amount:", result.curated_package.total);
+      }
 
       const data = await fetchWithTimeout<any>(
         '/api/stripe/create-payment-intent',
@@ -305,7 +311,9 @@ export default function BookingPage() {
         throw new Error(data.error);
       }
 
-      console.debug("[Payment] Payment intent created:", data.client_secret);
+      if (process.env.NODE_ENV !== "production") {
+        console.debug("[Payment] Payment intent created:", data.client_secret);
+      }
       setPaymentOptions({ clientSecret: data.client_secret });
       setShowPayment(true);
     } catch (err) {

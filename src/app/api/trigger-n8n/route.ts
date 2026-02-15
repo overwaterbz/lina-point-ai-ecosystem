@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { runSelfImprovementAndPersist } from "@/lib/agents/selfImprovementAgent";
 
 function requireSecret(request: NextRequest) {
-  const required = process.env.N8N_WEBHOOK_SECRET;
+  const required = process.env.N8N_WEBHOOK_SECRET || process.env.N8N_SECRET;
   if (!required) return;
 
   const provided = request.headers.get("x-n8n-secret");

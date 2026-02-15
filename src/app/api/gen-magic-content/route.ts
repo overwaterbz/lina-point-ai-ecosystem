@@ -3,6 +3,13 @@ import { createClient } from "@supabase/supabase-js";
 import { generateMagicContent } from "@/lib/magicContent";
 import { createAgentRun, finishAgentRun } from "@/lib/agents/agentRunLogger";
 
+const isProd = process.env.NODE_ENV === "production";
+const debugLog = (...args: unknown[]) => {
+  if (!isProd) {
+    console.log(...args);
+  }
+};
+
 // Server-only Supabase client
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -107,8 +114,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[API] Generating magic content for ${reservationId}`);
-    console.log(`[API] Occasion: ${occasion}`);
+    debugLog(`[API] Generating magic content for ${reservationId}`);
+    debugLog(`[API] Occasion: ${occasion}`);
 
     // Run ContentAgent
     let contentResult: Awaited<ReturnType<typeof generateMagicContent>> | null = null;

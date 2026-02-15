@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runContentAgent } from "@/lib/contentAgent";
 
+const isProd = process.env.NODE_ENV === "production";
+const debugLog = (...args: unknown[]) => {
+  if (!isProd) {
+    console.log(...args);
+  }
+};
+
 /**
  * GET /api/test-magic
  * Test magic content generation with mock data
  */
 export async function GET(request: NextRequest) {
   try {
-    console.log("[Test] Starting magic content generation test...");
+    debugLog("[Test] Starting magic content generation test...");
 
     // Mock user preferences and questionnaire
     const mockUserPrefs = {

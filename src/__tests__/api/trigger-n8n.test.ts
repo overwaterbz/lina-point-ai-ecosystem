@@ -13,7 +13,7 @@ import {
 jest.mock('@/lib/agents/selfImprovementAgent');
 jest.mock('@supabase/supabase-js');
 
-const N8N_SECRET = process.env.N8N_WEBHOOK_SECRET || 'test-secret';
+const N8N_SECRET = process.env.N8N_SECRET || process.env.N8N_WEBHOOK_SECRET || 'test-secret';
 
 describe('POST /api/trigger-n8n', () => {
   beforeEach(() => {

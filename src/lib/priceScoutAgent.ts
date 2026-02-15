@@ -7,6 +7,13 @@ import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { runWithRecursion } from "@/lib/agents/agentRecursion";
 import { evaluateTextQuality } from "@/lib/agents/recursionEvaluators";
 
+const isProd = process.env.NODE_ENV === "production";
+const debugLog = (...args: unknown[]) => {
+  if (!isProd) {
+    console.log(...args);
+  }
+};
+
 // OTA mock data for Lina Point Overwater Room prices
 const OTA_DATA = {
   expedia: { price: 450, url: "https://www.expedia.com/hotels/lina-point" },
@@ -62,7 +69,7 @@ const PriceScoutAnnotation = Annotation.Root({
  * Step 1: Scan OTAs (mock - in production, use real scraping/APIs)
  */
 async function scanOTAs(state: typeof PriceScoutAnnotation.State) {
-  console.log(`[PriceScout] Iteration ${state.iteration}: Scanning OTAs for "${state.roomType}"...`);
+  debugLog(`[PriceScout] Iteration ${state.iteration}: Scanning OTAs for "${state.roomType}"...`);
 
   // Simulate web scraping with some variance per iteration
   const variance = state.iteration > 1 ? Math.random() * 0.02 : 0; // ±2% price variance per iteration
@@ -95,7 +102,7 @@ async function calculateBeatPrice(state: typeof PriceScoutAnnotation.State) {
   const savings = Math.round((state.bestPrice - beatPrice) * 100) / 100;
   const savingsPercent = 3;
 
-  console.log(
+  debugLog(
     `[PriceScout] Beat price: $${beatPrice} (save $${savings}, ${savingsPercent}% off $${state.bestPrice})`
   );
 
@@ -112,7 +119,7 @@ async function refineSearch(state: typeof PriceScoutAnnotation.State) {
   state.iteration++;
 
   if (state.iteration >= 3) {
-    console.log(`[PriceScout] Max iterations (3) reached. Stopping refinement.`);
+    debugLog(`[PriceScout] Max iterations (3) reached. Stopping refinement.`);
     return {
       ...state,
       refinementNotes: `${state.refinementNotes} → Completed after ${state.iteration} iterations.`,
@@ -123,7 +130,7 @@ async function refineSearch(state: typeof PriceScoutAnnotation.State) {
   const potentialBetterDeal = state.bestPrice * 0.99; // Could find 1% cheaper
   if (Math.random() > 0.7) {
     // 30% chance of finding better deal each iteration
-    console.log(
+    debugLog(
       `[PriceScout] Potential better deal detected. Refining... (Iteration ${state.iteration})`
     );
     return {
@@ -132,7 +139,7 @@ async function refineSearch(state: typeof PriceScoutAnnotation.State) {
       refinementNotes: `${state.refinementNotes} → Found better deal in iteration ${state.iteration}. Re-scanning...`,
     };
   } else {
-    console.log(`[PriceScout] No better deals found. Continuing to next iteration.`);
+    debugLog(`[PriceScout] No better deals found. Continuing to next iteration.`);
     return state;
   }
 }
@@ -172,7 +179,7 @@ export async function runPriceScout(
   checkOutDate: string,
   location: string
 ): Promise<PriceScoutResult> {
-  console.log(`\n🔍 [PriceScout] Starting for ${roomType} in ${location}`);
+  debugLog(`\n🔍 [PriceScout] Starting for ${roomType} in ${location}`);
 
   const graph = await buildPriceScoutGraph();
 
@@ -203,8 +210,8 @@ export async function runPriceScout(
     })
   );
 
-  console.log(`✅ [PriceScout] Complete. Best OTA: ${finalState.bestOTA} @ $${finalState.bestPrice}`);
-  console.log(`💰 [PriceScout] Direct booking price: $${finalState.beatPrice} (Save 3%!)`);
+  debugLog(`✅ [PriceScout] Complete. Best OTA: ${finalState.bestOTA} @ $${finalState.bestPrice}`);
+  debugLog(`💰 [PriceScout] Direct booking price: $${finalState.beatPrice} (Save 3%!)`);
 
   return {
     bestPrice: finalState.bestPrice,
@@ -245,7 +252,7 @@ export async function logPriceToSupabase(
       savings_percent: result.savingsPercent,
       url: result.priceUrl,
     });
-    console.log("[PriceScout] Price logged to Supabase");
+    debugLog("[PriceScout] Price logged to Supabase");
   } catch (error) {
     console.error("[PriceScout] Failed to log price:", error);
   }

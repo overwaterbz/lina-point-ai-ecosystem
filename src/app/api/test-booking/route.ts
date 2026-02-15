@@ -2,6 +2,13 @@ import { NextResponse } from 'next/server';
 import { runPriceScout } from '@/lib/priceScoutAgent';
 import { runExperienceCurator } from '@/lib/experienceCuratorAgent';
 
+const isProd = process.env.NODE_ENV === 'production';
+const debugLog = (...args: unknown[]) => {
+  if (!isProd) {
+    console.log(...args);
+  }
+};
+
 /**
  * Test endpoint for booking flow - no auth required
  * Use for quick testing of agents without signup
@@ -10,7 +17,7 @@ import { runExperienceCurator } from '@/lib/experienceCuratorAgent';
  */
 export async function GET() {
   try {
-    console.log('🧪 Starting test booking flow...');
+    debugLog('🧪 Starting test booking flow...');
 
     // Mock user preferences
     const userPreferences = {
@@ -34,20 +41,20 @@ export async function GET() {
 
     const maxIterations = 3;
 
-    console.log('📍 User Prefs:', userPreferences);
-    console.log('📍 Booking Request:', bookingRequest);
+    debugLog('📍 User Prefs:', userPreferences);
+    debugLog('📍 Booking Request:', bookingRequest);
 
     // Run agents in parallel
-    console.log('\n🤖 Running PriceScoutAgent...');
+    debugLog('\n🤖 Running PriceScoutAgent...');
     const priceScoutResult = await runPriceScout(
       bookingRequest.roomType,
       bookingRequest.checkInDate,
       bookingRequest.checkOutDate,
       bookingRequest.location
     );
-    console.log('✅ PriceScout Result:', priceScoutResult);
+    debugLog('✅ PriceScout Result:', priceScoutResult);
 
-    console.log('\n🎯 Running ExperienceCuratorAgent...');
+    debugLog('\n🎯 Running ExperienceCuratorAgent...');
     const curatorResult = await runExperienceCurator(
       {
         interests: ['snorkeling', 'dining'],
@@ -57,7 +64,7 @@ export async function GET() {
       bookingRequest.groupSize,
       bookingRequest.tourBudget
     );
-    console.log('✅ Curator Result:', curatorResult);
+    debugLog('✅ Curator Result:', curatorResult);
 
     // Combine results
     const response = {
@@ -128,7 +135,7 @@ export async function POST(req: Request) {
       interests = ['snorkeling'],
     } = body;
 
-    console.log('🧪 Custom test booking:', { roomType, checkInDate, checkOutDate });
+    debugLog('🧪 Custom test booking:', { roomType, checkInDate, checkOutDate });
 
     const priceScoutResult = await runPriceScout(
       roomType,

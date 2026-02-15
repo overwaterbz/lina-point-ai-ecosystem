@@ -9,6 +9,13 @@ import { grokLLM } from "@/lib/grokIntegration";
 import { runWithRecursion } from "@/lib/agents/agentRecursion";
 import { evaluateTextQuality } from "@/lib/agents/recursionEvaluators";
 
+const isProd = process.env.NODE_ENV === "production";
+const debugLog = (...args: unknown[]) => {
+  if (!isProd) {
+    console.log(...args);
+  }
+};
+
 export interface MagicQuestionnaire {
   occasion: "birthday" | "anniversary" | "reunion" | "proposal" | "celebration";
   recipientName: string;
@@ -102,7 +109,7 @@ ${contentType === "audio_remix" ? `Create an ambient remix description with bina
 
 Make it magical, personal, and uplifting. Maximum 500 words.${refinement}`;
 
-  console.log(`[ContentAgent] Building Grok prompt for ${contentType}`);
+  debugLog(`[ContentAgent] Building Grok prompt for ${contentType}`);
 
   return {
     ...state,
@@ -116,7 +123,7 @@ Make it magical, personal, and uplifting. Maximum 500 words.${refinement}`;
  */
 async function generateLyricsWithGrok(state: typeof ContentGenAnnotation.State) {
   try {
-    console.log(`[ContentAgent] Calling Grok-4 to generate lyrics/script...`);
+    debugLog(`[ContentAgent] Calling Grok-4 to generate lyrics/script...`);
 
     const response = await grokLLM.invoke([
       {
@@ -132,7 +139,7 @@ async function generateLyricsWithGrok(state: typeof ContentGenAnnotation.State) 
 
     const lyrics = typeof response.content === "string" ? response.content : String(response.content);
 
-    console.log(`[ContentAgent] ✅ Generated ${state.contentType} content with Grok`);
+    debugLog(`[ContentAgent] ✅ Generated ${state.contentType} content with Grok`);
 
     return {
       ...state,
@@ -153,18 +160,18 @@ async function generateLyricsWithGrok(state: typeof ContentGenAnnotation.State) 
  */
 async function generateAudioViaSuno(state: typeof ContentGenAnnotation.State) {
   if (state.contentType === "video") {
-    console.log("[ContentAgent] Skipping Suno for video-only generation");
+    debugLog("[ContentAgent] Skipping Suno for video-only generation");
     return { ...state, sunoAudioUrl: "" };
   }
 
-  console.log(`[ContentAgent] Calling Suno API to generate audio...`);
+  debugLog(`[ContentAgent] Calling Suno API to generate audio...`);
 
   try {
     // Mock Suno API response
     // In production, replace with real Suno API call using grokLyrics as input
     const mockAudioUrl = `https://supabase.storage.magic.content/audio/${state.userId}/${Date.now()}.mp3`;
 
-    console.log(`[ContentAgent] ✅ Generated audio via Suno: ${mockAudioUrl}`);
+    debugLog(`[ContentAgent] ✅ Generated audio via Suno: ${mockAudioUrl}`);
 
     return {
       ...state,
@@ -186,18 +193,18 @@ async function generateAudioViaSuno(state: typeof ContentGenAnnotation.State) {
  */
 async function generateVideoViaLTX(state: typeof ContentGenAnnotation.State) {
   if (state.contentType === "audio_remix" || state.contentType === "song" && !state.questionnaire.message) {
-    console.log("[ContentAgent] Skipping LTX Studio for audio-only generation");
+    debugLog("[ContentAgent] Skipping LTX Studio for audio-only generation");
     return { ...state, ltxVideoUrl: "" };
   }
 
-  console.log(`[ContentAgent] Calling LTX Studio to generate video...`);
+  debugLog(`[ContentAgent] Calling LTX Studio to generate video...`);
 
   try {
     // Mock LTX Studio API response
     // In production, use resort stock footage from public/videos/ and grokLyrics as scene descriptions
     const mockVideoUrl = `https://supabase.storage.magic.content/video/${state.userId}/${Date.now()}.mp4`;
 
-    console.log(`[ContentAgent] ✅ Generated video via LTX Studio: ${mockVideoUrl}`);
+    debugLog(`[ContentAgent] ✅ Generated video via LTX Studio: ${mockVideoUrl}`);
 
     return {
       ...state,
@@ -218,18 +225,18 @@ async function generateVideoViaLTX(state: typeof ContentGenAnnotation.State) {
  */
 async function remixAudioWithKlangio(state: typeof ContentGenAnnotation.State) {
   if (!state.sunoAudioUrl) {
-    console.log("[ContentAgent] No audio to remix");
+    debugLog("[ContentAgent] No audio to remix");
     return { ...state, klangioRemix: "" };
   }
 
-  console.log(`[ContentAgent] Calling Klangio to remix audio with ambient elements...`);
+  debugLog(`[ContentAgent] Calling Klangio to remix audio with ambient elements...`);
 
   try {
     // Mock Klangio API response
     // In production, apply binaural beats, kundalini activation frequencies, etc.
     const mockRemixUrl = `https://supabase.storage.magic.content/audio/${state.userId}/${Date.now()}-remix.mp3`;
 
-    console.log(`[ContentAgent] ✅ Created ambient remix via Klangio: ${mockRemixUrl}`);
+    debugLog(`[ContentAgent] ✅ Created ambient remix via Klangio: ${mockRemixUrl}`);
 
     return {
       ...state,
@@ -250,7 +257,7 @@ async function remixAudioWithKlangio(state: typeof ContentGenAnnotation.State) {
  * Step 6: Merge best formats and save to Supabase Storage
  */
 async function mergeAndSave(state: typeof ContentGenAnnotation.State) {
-  console.log(`[ContentAgent] Merging and saving final ${state.contentType}...`);
+  debugLog(`[ContentAgent] Merging and saving final ${state.contentType}...`);
 
   try {
     // Determine final media URL based on content type
@@ -269,7 +276,7 @@ async function mergeAndSave(state: typeof ContentGenAnnotation.State) {
       throw new Error("No media generated to save");
     }
 
-    console.log(`[ContentAgent] ✅ Final media URL: ${finalUrl}`);
+    debugLog(`[ContentAgent] ✅ Final media URL: ${finalUrl}`);
 
     return {
       ...state,
@@ -312,7 +319,7 @@ async function buildContentGraph() {
  * Main export: Run content generation agent
  */
 export async function runContentAgent(request: ContentGenerationRequest): Promise<GeneratedContent> {
-  console.log(`\n✨ [ContentAgent] Generating ${request.contentType} for ${request.questionnaire.occasion}...`);
+  debugLog(`\n✨ [ContentAgent] Generating ${request.contentType} for ${request.questionnaire.occasion}...`);
 
   const startTime = Date.now();
   const graph = await buildContentGraph();
@@ -356,8 +363,8 @@ export async function runContentAgent(request: ContentGenerationRequest): Promis
     .charAt(0)
     .toUpperCase()}${request.questionnaire.occasion.slice(1)} ${request.contentType} for ${request.questionnaire.recipientName}`;
 
-  console.log(`✅ [ContentAgent] Complete in ${processingTime}ms`);
-  console.log(`📢 [ContentAgent] Media URL: ${finalState.mergedMediaUrl}`);
+  debugLog(`✅ [ContentAgent] Complete in ${processingTime}ms`);
+  debugLog(`📢 [ContentAgent] Media URL: ${finalState.mergedMediaUrl}`);
 
   return {
     type: request.contentType,
@@ -382,11 +389,11 @@ export async function sendContentEmail(
   recipientName: string
 ): Promise<boolean> {
   try {
-    console.log(`[ContentAgent] Sending email to ${userEmail} with download link...`);
+    debugLog(`[ContentAgent] Sending email to ${userEmail} with download link...`);
 
     // Mock email sending
     // In production, use SendGrid, Resend, or AWS SES
-    console.log(`✅ [ContentAgent] Email sent with ${contentType} download link`);
+    debugLog(`✅ [ContentAgent] Email sent with ${contentType} download link`);
 
     return true;
   } catch (error) {
