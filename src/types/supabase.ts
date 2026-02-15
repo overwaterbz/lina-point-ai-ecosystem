@@ -20,6 +20,7 @@ export interface Profile {
   full_name?: string;
   avatar_url?: string;
   bio?: string;
+  phone_number?: string | null;
   // Preferences
   birthday?: string | null; // ISO date string e.g. 1990-05-14
   anniversary?: string | null; // ISO date string

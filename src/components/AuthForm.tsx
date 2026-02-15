@@ -15,6 +15,7 @@ export function AuthForm({ mode = 'login', onSuccess }: AuthFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [birthday, setBirthday] = useState('');
   const [anniversary, setAnniversary] = useState('');
   const [specialEvents, setSpecialEvents] = useState<Array<{ name: string; date: string }>>([]);
@@ -28,6 +29,9 @@ export function AuthForm({ mode = 'login', onSuccess }: AuthFormProps) {
   const { signIn, signUp } = useAuth();
   const router = useRouter();
 
+  const normalizePhone = (value: string) =>
+    value.trim().replace(/^whatsapp:/i, '').replace(/\s+/g, '');
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -35,6 +39,7 @@ export function AuthForm({ mode = 'login', onSuccess }: AuthFormProps) {
 
     try {
       const prefs = {
+        phone_number: phoneNumber ? normalizePhone(phoneNumber) : null,
         birthday: birthday || null,
         anniversary: anniversary || null,
         special_events: specialEvents.length ? specialEvents : null,
@@ -120,6 +125,24 @@ export function AuthForm({ mode = 'login', onSuccess }: AuthFormProps) {
                 placeholder="John Doe"
                 disabled={loading}
               />
+            </div>
+          )}
+
+          {!isLogin && (
+            <div>
+              <label htmlFor="phoneNumber" className="block text-sm font-medium text-gray-700 mb-2">
+                WhatsApp Number
+              </label>
+              <input
+                id="phoneNumber"
+                type="tel"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                placeholder="+1 555 123 4567"
+                disabled={loading}
+              />
+              <p className="text-xs text-gray-500 mt-1">Use your WhatsApp number in E.164 format.</p>
             </div>
           )}
 

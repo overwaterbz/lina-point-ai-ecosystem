@@ -9,6 +9,7 @@ interface ProfileFormProps {
 }
 
 export default function ProfileForm({ action, initial }: ProfileFormProps) {
+  const [phoneNumber, setPhoneNumber] = useState(initial?.phone_number || '');
   const [birthday, setBirthday] = useState(initial?.birthday || '');
   const [anniversary, setAnniversary] = useState(initial?.anniversary || '');
   const [specialEvents, setSpecialEvents] = useState<Array<{ name: string; date: string }>>(
@@ -42,6 +43,18 @@ export default function ProfileForm({ action, initial }: ProfileFormProps) {
 
   return (
     <form action={action} onSubmit={submitHandler} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
+        <input
+          name="phone_number"
+          type="tel"
+          value={phoneNumber}
+          onChange={(e) => setPhoneNumber(e.target.value)}
+          className="w-full px-3 py-2 border rounded"
+          placeholder="+1 555 123 4567"
+        />
+        <p className="text-xs text-gray-500 mt-1">Use your WhatsApp number in E.164 format.</p>
+      </div>
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Birthday</label>

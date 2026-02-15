@@ -1,10 +1,26 @@
 'use client';
 
 import { useSession } from '@/hooks/useAuth';
+import { createBrowserSupabaseClient } from '@/lib/supabase';
 import Link from 'next/link';
+import { useEffect } from 'react';
 
 export default function Home() {
   const { session, loading } = useSession();
+
+  useEffect(() => {
+    const runSupabaseTest = async () => {
+      const supabase = createBrowserSupabaseClient();
+      const { data, error } = await supabase
+        .from('magic_content')
+        .select('*')
+        .limit(1);
+
+      console.log('Supabase Test: Data:', data ?? [], 'Error:', error ?? null);
+    };
+
+    runSupabaseTest();
+  }, []);
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">

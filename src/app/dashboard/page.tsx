@@ -64,6 +64,21 @@ export default function DashboardPage() {
         <div className="bg-white rounded-lg shadow-md p-8">
           <h2 className="text-3xl font-bold mb-6 text-gray-900">Welcome!</h2>
 
+          {!profile?.opt_in_magic && (
+            <div className="mb-8 rounded-lg border border-amber-200 bg-amber-50 p-4">
+              <h3 className="text-lg font-semibold text-amber-800">Complete onboarding</h3>
+              <p className="text-sm text-amber-700">
+                Enable agent permissions and preferences to unlock personalized experiences.
+              </p>
+              <button
+                onClick={() => router.push('/onboarding')}
+                className="mt-3 inline-flex items-center rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
+              >
+                Finish onboarding
+              </button>
+            </div>
+          )}
+
           {/* User info */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
             <h3 className="text-lg font-semibold mb-4 text-gray-900">Profile Information</h3>

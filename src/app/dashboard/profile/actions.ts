@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase-server';
+import { normalizePhoneNumber } from '@/lib/whatsapp';
 
 export async function updateProfileAction(formData: FormData) {
   'use server';
@@ -18,6 +19,8 @@ export async function updateProfileAction(formData: FormData) {
     const anniversary = formData.get('anniversary') as string | null;
     const music_style = (formData.get('music_style') as string) || null;
     const opt_in_magic = formData.get('opt_in_magic') === 'on' || formData.get('opt_in_magic') === 'true';
+    const phoneRaw = (formData.get('phone_number') as string) || null;
+    const phone_number = phoneRaw ? normalizePhoneNumber(phoneRaw) : null;
 
     const specialEventsJson = formData.get('special_events_json') as string | null;
     let special_events = null;
@@ -37,6 +40,7 @@ export async function updateProfileAction(formData: FormData) {
 
     const updates: Record<string, any> = {
       user_id: user.id,
+      phone_number: phone_number || null,
       birthday: birthday || null,
       anniversary: anniversary || null,
       music_style: music_style || null,

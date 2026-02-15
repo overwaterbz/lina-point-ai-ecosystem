@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { runContentAgent } from "@/lib/contentAgent";
+import { createAgentRun, finishAgentRun } from "@/lib/agents/agentRunLogger";
 
 // Server-only Supabase client
 const supabase = createClient(
@@ -78,11 +79,18 @@ export async function POST(request: NextRequest) {
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("*")
-      .eq("id", user.id)
+      .eq("user_id", user.id)
       .single();
 
     if (profileError) {
       console.warn("Could not fetch profile:", profileError);
+    }
+
+    if (!profile?.opt_in_magic) {
+      return NextResponse.json(
+        { error: "Magic agent not enabled in profile" },
+        { status: 403 }
+      );
     }
 
     const userPrefs = profile || {
@@ -118,14 +126,52 @@ export async function POST(request: NextRequest) {
 
     // Run ContentAgent
     let contentResult;
+    let runId: string | null = null;
+    const runStart = Date.now();
+
     try {
+      try {
+        runId = await createAgentRun(supabase as any, {
+          user_id: user.id,
+          agent_name: "content_magic",
+          request_id: reservationId,
+          input: { reservationId, occasion, genre, userPrefs },
+        });
+      } catch (logError) {
+        console.warn("Failed to create agent run:", logError);
+      }
+
       contentResult = await runContentAgent(
         reservationId,
         userPrefs,
         occasion,
         genre
       );
+
+      if (runId) {
+        try {
+          await finishAgentRun(supabase as any, runId, {
+            status: "completed",
+            output: contentResult,
+            duration_ms: Date.now() - runStart,
+          });
+        } catch (logError) {
+          console.warn("Failed to finalize agent run:", logError);
+        }
+      }
     } catch (agentError) {
+      if (runId) {
+        try {
+          await finishAgentRun(supabase as any, runId, {
+            status: "failed",
+            error_message: agentError instanceof Error ? agentError.message : String(agentError),
+            duration_ms: Date.now() - runStart,
+          });
+        } catch (logError) {
+          console.warn("Failed to finalize agent run:", logError);
+        }
+      }
+
       // Update record with error
       await supabase
         .from("magic_content")

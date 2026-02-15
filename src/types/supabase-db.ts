@@ -19,6 +19,47 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+      agent_runs: {
+        Row: {
+          id: string;
+          user_id: string;
+          agent_name: string;
+          request_id: string | null;
+          status: string;
+          input: Json | null;
+          output: Json | null;
+          error_message: string | null;
+          started_at: string | null;
+          finished_at: string | null;
+          duration_ms: number | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          agent_name: string;
+          request_id?: string | null;
+          status?: string;
+          input?: Json | null;
+          output?: Json | null;
+          error_message?: string | null;
+          started_at?: string | null;
+          finished_at?: string | null;
+          duration_ms?: number | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          agent_name?: string;
+          request_id?: string | null;
+          status?: string;
+          input?: Json | null;
+          output?: Json | null;
+          error_message?: string | null;
+          started_at?: string | null;
+          finished_at?: string | null;
+          duration_ms?: number | null;
+        };
+      };
       profiles: {
         Row: {
           id: string; // uuid
@@ -26,6 +67,7 @@ export interface Database {
           full_name: string | null;
           avatar_url: string | null;
           bio: string | null;
+          phone_number: string | null;
           // ISO date string (YYYY-MM-DD or full ISO timestamp)
           birthday: string | null;
           // ISO date string (YYYY-MM-DD or full ISO timestamp)
@@ -44,6 +86,7 @@ export interface Database {
           full_name?: string | null;
           avatar_url?: string | null;
           bio?: string | null;
+          phone_number?: string | null;
           birthday?: string | null;
           anniversary?: string | null;
           special_events?: Array<{ name: string; date: string }> | null;
@@ -60,6 +103,7 @@ export interface Database {
           full_name?: string | null;
           avatar_url?: string | null;
           bio?: string | null;
+          phone_number?: string | null;
           birthday?: string | null;
           anniversary?: string | null;
           special_events?: Array<{ name: string; date: string }> | null;
@@ -67,6 +111,73 @@ export interface Database {
           maya_interests?: string[] | null;
           opt_in_magic?: boolean | null;
           magic_profile?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      whatsapp_messages: {
+        Row: {
+          id: string;
+          session_id: string | null;
+          user_id: string | null;
+          phone_number: string;
+          direction: string;
+          body: string;
+          twilio_sid: string | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          session_id?: string | null;
+          user_id?: string | null;
+          phone_number: string;
+          direction: string;
+          body: string;
+          twilio_sid?: string | null;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          session_id?: string | null;
+          user_id?: string | null;
+          phone_number?: string;
+          direction?: string;
+          body?: string;
+          twilio_sid?: string | null;
+          created_at?: string | null;
+        };
+      };
+      whatsapp_sessions: {
+        Row: {
+          id: string;
+          phone_number: string;
+          user_id: string | null;
+          last_message: string | null;
+          context: Json | null;
+          last_inbound_at: string | null;
+          last_outbound_at: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          phone_number: string;
+          user_id?: string | null;
+          last_message?: string | null;
+          context?: Json | null;
+          last_inbound_at?: string | null;
+          last_outbound_at?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          phone_number?: string;
+          user_id?: string | null;
+          last_message?: string | null;
+          context?: Json | null;
+          last_inbound_at?: string | null;
+          last_outbound_at?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
