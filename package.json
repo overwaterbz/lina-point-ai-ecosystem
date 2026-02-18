@@ -10,7 +10,8 @@
     "test": "jest --watch",
     "test:ci": "jest --ci --coverage",
     "test:coverage": "jest --coverage",
-    "test:api": "jest --testPathPattern=api --verbose"
+    "test:api": "jest --testPathPattern=api --verbose",
+    "test:marketing": "node test-marketing-crew.js"
   },
   "dependencies": {
     "@langchain/community": "^1.1.15",
