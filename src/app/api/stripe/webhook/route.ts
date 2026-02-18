@@ -8,6 +8,10 @@ const debugLog = (...args: unknown[]) => {
   }
 }
 
+/**
+ * Payment Webhook Handler
+ * Processes events from both Stripe (fallback) and Square (primary)
+ */
 export async function POST(req: Request) {
   const sig = req.headers.get('stripe-signature') || ''
   const text = await req.text()
@@ -37,27 +41,33 @@ export async function POST(req: Request) {
   switch (event.type) {
     case 'payment_intent.succeeded':
       const pi = event.data.object
-      debugLog('PaymentIntent succeeded:', pi.id, 'amount:', pi.amount)
+      debugLog('PaymentIntent succeeded:', pi.id, 'amount:', pi.amount, 'processor:', pi.metadata?.processor || 'stripe')
       try {
         const bookingId = pi.metadata?.booking_id
+        const processor = pi.metadata?.processor || 'stripe'
+        
         if (bookingId) {
           // Update tour_bookings associated with this booking_id to paid
           const { createServerSupabaseClient } = await import('@/lib/supabase-server')
           const supabase = await createServerSupabaseClient()
           const { error: updateErr } = await supabase
             .from('tour_bookings')
-            .update({ status: 'paid', payment_intent: pi.id })
+            .update({ 
+              status: 'paid', 
+              payment_intent: pi.id,
+              payment_processor: processor 
+            })
             .eq('booking_id', bookingId)
 
-          if (updateErr) console.warn('[Stripe Webhook] Failed to mark tours paid:', updateErr.message)
-          else debugLog(`[Stripe Webhook] Marked tour_bookings paid for booking ${bookingId}`)
+          if (updateErr) console.warn('[Webhook] Failed to mark tours paid:', updateErr.message)
+          else debugLog(`[Webhook] Marked tour_bookings paid for booking ${bookingId} via ${processor}`)
         }
       } catch (webhookErr) {
         console.error('Error handling payment_intent.succeeded webhook:', webhookErr)
       }
       break
     case 'payment_intent.payment_failed':
-      console.warn('Payment failed:', event.data.object)
+      console.warn('[Webhook] Payment failed:', event.data.object.id, 'processor:', event.data.object.metadata?.processor || 'stripe')
       break
     default:
       debugLog(`Unhandled event type ${event.type}`)
