@@ -11,7 +11,7 @@ process.env.STRIPE_SECRET_KEY = 'sk_test_123';
 process.env.TWILIO_ACCOUNT_SID = 'test-sid';
 process.env.TWILIO_AUTH_TOKEN = 'test-token';
 process.env.TWILIO_PHONE_NUMBER = '+1234567890';
-process.env.NODE_ENV = 'test';
+// NODE_ENV is set by Jest automatically
 
 // Global test utilities
 global.console = {

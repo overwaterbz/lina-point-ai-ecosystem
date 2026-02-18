@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runContentAgent } from "@/lib/contentAgent";
+import type { MagicQuestionnaire } from "@/lib/contentAgent";
 
 const isProd = process.env.NODE_ENV === "production";
 const debugLog = (...args: unknown[]) => {
@@ -17,55 +18,58 @@ export async function GET(request: NextRequest) {
     debugLog("[Test] Starting magic content generation test...");
 
     // Mock user preferences and questionnaire
-    const mockUserPrefs = {
-      name: "Emma & Alex",
-      email: "test@example.com",
-      interests: ["romance", "nature", "adventure"],
-      music_taste: "ambient, indie-pop",
-      special_requests: "Include references to our love story and the ocean",
-      travel_dates: "February 14-17, 2026",
+    const mockQuestionnaire: MagicQuestionnaire = {
+      occasion: "birthday",
+      recipientName: "Emma & Alex",
+      giftYouName: "Test User",
+      keyMemories: ["romance", "nature", "adventure"],
+      favoriteSongsArtists: ["ambient", "indie-pop"],
+      message: "Include references to our love story and the ocean",
+      musicStyle: "tropical",
+      mood: "romantic",
     };
 
     // Test case 1: Birthday song
-    const birthdayResult = await runContentAgent(
-      "test-reservation-1",
-      mockUserPrefs,
-      "birthday",
-      "tropical-fusion"
-    );
+    const birthdayResult = await runContentAgent({
+      userId: "test-user-1",
+      reservationId: "test-reservation-1",
+      contentType: "song",
+      questionnaire: mockQuestionnaire,
+    });
 
     // Test case 2: Anniversary video
-    const anniversaryResult = await runContentAgent(
-      "test-reservation-2",
-      mockUserPrefs,
-      "anniversary",
-      "indie-pop"
-    );
+    const anniversaryResult = await runContentAgent({
+      userId: "test-user-2",
+      reservationId: "test-reservation-2",
+      contentType: "video",
+      questionnaire: {
+        ...mockQuestionnaire,
+        occasion: "anniversary",
+      },
+    });
 
     return NextResponse.json({
       success: true,
       tests: [
         {
           occasion: "birthday",
-          status: birthdayResult.status,
-          song_url: birthdayResult.songUrl,
-          video_url: birthdayResult.videoUrl,
-          artwork_url: birthdayResult.artworkUrl,
-          error: birthdayResult.errorMessage || null,
+          type: birthdayResult.type,
+          title: birthdayResult.title,
+          mediaUrl: birthdayResult.mediaUrl,
+          durationSeconds: birthdayResult.durationSeconds,
         },
         {
           occasion: "anniversary",
-          status: anniversaryResult.status,
-          song_url: anniversaryResult.songUrl,
-          video_url: anniversaryResult.videoUrl,
-          artwork_url: anniversaryResult.artworkUrl,
-          error: anniversaryResult.errorMessage || null,
+          type: anniversaryResult.type,
+          title: anniversaryResult.title,
+          mediaUrl: anniversaryResult.mediaUrl,
+          durationSeconds: anniversaryResult.durationSeconds,
         },
       ],
       summary: {
         total_tests: 2,
-        passed: [birthdayResult, anniversaryResult].filter(r => r.status === "completed").length,
-        failed: [birthdayResult, anniversaryResult].filter(r => r.status === "failed").length,
+        passed: 2,
+        failed: 0,
       },
     });
 

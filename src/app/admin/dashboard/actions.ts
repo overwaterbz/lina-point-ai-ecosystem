@@ -29,7 +29,6 @@ export async function triggerN8nAction() {
   });
 
   revalidatePath("/admin/dashboard");
-  return response.ok;
 }
 
 export async function runSelfImproveAction() {
@@ -67,5 +66,4 @@ export async function runSelfImproveAction() {
   });
 
   revalidatePath("/admin/dashboard");
-  return true;
 }

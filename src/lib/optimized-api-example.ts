@@ -16,7 +16,7 @@ import {
   rateLimiters,
   performanceMonitor,
 } from '@/lib/performance';
-import { createClient } from '@/lib/supabase-server';
+import { createServerSupabaseClient } from '@/lib/supabase-server';
 
 /**
  * Example: GET /api/user/profile
@@ -25,7 +25,7 @@ import { createClient } from '@/lib/supabase-server';
 export async function GET(request: NextRequest) {
   try {
     // 1. Rate limiting
-    const rateLimitId = getRateLimitIdentifier();
+    const rateLimitId = await getRateLimitIdentifier();
     if (!rateLimiters.api.isAllowed(rateLimitId)) {
       return NextResponse.json(
         { error: 'Rate limit exceeded' },
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
       async () => {
         // Try cache first
         return withCache(cacheKey, async () => {
-          const supabase = await createClient();
+          const supabase = await createServerSupabaseClient();
           const { data, error } = await supabase
             .from('profiles')
             .select('*')

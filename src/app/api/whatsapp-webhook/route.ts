@@ -297,7 +297,7 @@ export async function POST(request: NextRequest) {
           try {
             await finishAgentRun(supabase as any, magicRunId, {
               status: 'completed',
-              output: contentResult,
+              output: contentResult as any,
               duration_ms: Date.now() - runStart,
             });
           } catch (logError) {

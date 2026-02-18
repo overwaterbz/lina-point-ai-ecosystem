@@ -111,7 +111,7 @@ async function tryStripePayment(
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(amount * 100),
       currency,
-      metadata: { ...metadata, processor: 'stripe' } || {},
+      metadata: { ...metadata, processor: 'stripe' },
     })
 
     return {

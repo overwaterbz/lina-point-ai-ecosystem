@@ -336,6 +336,7 @@ export async function runContentAgent(request: ContentGenerationRequest): Promis
     klangioRemix: "",
     mergedMediaUrl: "",
     status: "pending",
+    error: undefined,
     processingTimeMs: 0,
   };
 

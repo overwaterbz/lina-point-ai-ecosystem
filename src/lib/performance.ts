@@ -161,9 +161,9 @@ export const rateLimiters = {
 /**
  * Get rate limit identifier from request
  */
-export function getRateLimitIdentifier(): string {
+export async function getRateLimitIdentifier(): Promise<string> {
   try {
-    const headersList = headers();
+    const headersList = await headers();
     const forwarded = headersList.get('x-forwarded-for');
     const ip =
       forwarded?.split(',')[0].trim() ||

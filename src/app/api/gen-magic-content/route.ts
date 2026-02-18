@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
         try {
           await finishAgentRun(supabase as any, runId, {
             status: "completed",
-            output: contentResult,
+            output: contentResult as any,
             duration_ms: Date.now() - runStart,
           });
         } catch (logError) {
