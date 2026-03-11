@@ -5,7 +5,9 @@ export type AgentName =
   | 'experience_curator'
   | 'content_magic'
   | 'whatsapp_concierge'
-  | 'self_improvement';
+  | 'self_improvement'
+  | 'health_monitor'
+  | 'marketing_crew';
 
 export type AgentRunStatus = 'started' | 'completed' | 'failed';
 

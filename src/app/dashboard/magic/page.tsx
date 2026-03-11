@@ -51,7 +51,6 @@ export default function MagicPage() {
       const data = await response.json();
       setContents(data.contents || []);
     } catch (error) {
-      console.error("Error fetching content:", error);
       toast.error("Failed to load magic content");
     } finally {
       setLoading(false);

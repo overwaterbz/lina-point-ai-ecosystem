@@ -1,0 +1,98 @@
+{
+  "name": "Lina Point - Magic Content Flow",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 100],
+      "webhookId": "lina-magic-content-trigger",
+      "notes": "Triggered when guest requests magic content (songs/videos)"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract magic content request\nreturn {\n  phone: $input.first().json.phone || $input.first().json.body.phone,\n  userId: $input.first().json.userId || $input.first().json.body.userId,\n  sessionId: $input.first().json.sessionId || $input.first().json.body.sessionId,\n  occasion: $input.first().json.occasion || $input.first().json.body.occasion || 'honeymoon',\n  reservationId: $input.first().json.reservationId || $input.first().json.body.reservationId,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "extract-request",
+      "name": "Extract Request",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 100],
+      "notes": "Parse magic content request from webhook"
+    },
+    {
+      "parameters": {
+        "operation": "query",
+        "query": "SELECT opt_in_magic FROM profiles WHERE id = '{{ $node[\"extract-request\"].json.userId }}'",
+        "options": {
+          "nodeCredentialType": "supabase"
+        }
+      },
+      "id": "check-opt-in",
+      "name": "Check Opt-In Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [650, 100],
+      "notes": "Verify user opted in to magic content"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Check if user opted in\nconst optInStatus = $input.first().json.opt_in_magic;\n\nif (!optInStatus) {\n  return {\n    allowed: false,\n    message: 'Magic content is not enabled for your profile. Visit your settings to opt in!',\n    error: 'user_not_opted_in'\n  };\n}\n\nreturn {\n  allowed: true,\n  message: 'User opted in, proceeding with generation',\n  error: null\n};"
+      },
+      "id": "validate-opt-in",
+      "name": "Validate Opt-In",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 100],
+      "notes": "Validate user consent for magic content"
+    },
+    {
+      "parameters": {
+        "url": "https://lina-point-ai-ecosystem.vercel.app/api/gen-magic-content",
+        "method": "POST",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "bodyParametersJson": "{\n  \"reservationId\": \"{{ $node[\\\"extract-request\\\"].json.reservationId }}\",\n  \"occasion\": \"{{ $node[\\\"extract-request\\\"].json.occasion }}\",\n  \"userId\": \"{{ $node[\\\"extract-request\\\"].json.userId }}\"\n}",
+        "options": {
+          "timeout": 60000,
+          "redirect": "follow"
+        }
+      },
+      "id": "generate-content",
+      "name": "Generate Magic Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 100],
+      "notes": "Call content generation API (songs, videos, playlists)"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format content URLs for WhatsApp\nconst content = $input.first().json;\n\nlet reply = `✨ Your magical ${content.occasion} content is ready!\\n\\n`;\n\nif (content.playlist_url) {\n  reply += `🎵 Playlist: ${content.playlist_url}\\n`;\n}\nif (content.video_url) {\n  reply += `🎬 Video: ${content.video_url}\\n`;\n}\nif (content.song_credits) {\n  reply += `\\n🎼 Artists: ${content.song_credits.join(', ')}\\n`;\n}\n\nreply += `\\nEnjoy your magical moments! ✨`;\n\nreturn {\n  message: reply,\n  playlist: content.playlist_url,\n  video: content.video_url,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "format-reply",
+      "name": "Format Reply",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1250, 100],
+      "notes": "Format content URLs for WhatsApp message"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twilioApi",
+        "method": "POST",
+        "bodyParametersJson": "{\n  \"From\": \"whatsapp:+13369996930\",\n  \"To\": \"whatsapp:{{ $node[\\\"extract-request\\\"].json.phone }}\",\n  \"Body\": \"{{ $node[\\\"format-reply\\\"].json.message }}\"\n}",
+        "options": {
+          "timeout": 10000\n        }\n      },\n      \"id\": \"send-content\",\n      \"name\": \"Send Content via WhatsApp\",\n      \"type\": \"n8n-nodes-base.httpRequest\",\n      \"typeVersion\": 4,\n      \"position\": [1450, 100],\n      \"notes\": \"Send generated content URLs to guest\"\n    },\n    {\n      \"parameters\": {\n        \"operation\": \"insert\",\n        \"schema\": \"public\",\n        \"table\": \"magic_content\",\n        \"columns\": \"reservation_id,user_id,occasion,playlist_url,video_url,created_at\",\n        \"dataToSend\": \"{\n          \\\"reservation_id\\\": \\\"{{ $node[\\\"extract-request\\\"].json.reservationId }}\\\",\n          \\\"user_id\\\": \\\"{{ $node[\\\"extract-request\\\"].json.userId }}\\\",\n          \\\"occasion\\\": \\\"{{ $node[\\\"extract-request\\\"].json.occasion }}\\\",\n          \\\"playlist_url\\\": \\\"{{ $node[\\\"format-reply\\\"].json.playlist }}\\\",\n          \\\"video_url\\\": \\\"{{ $node[\\\"format-reply\\\"].json.video }}\\\",\n          \\\"created_at\\\": \\\"{{ $node[\\\"extract-request\\\"].json.timestamp }}\\\"\n        }\"\n      },\n      \"id\": \"save-content\",\n      \"name\": \"Save to Magic Content\",\n      \"type\": \"n8n-nodes-base.supabase\",\n      \"typeVersion\": 1,\n      \"position\": [1450, 250],\n      \"notes\": \"Store generated content metadata\"\n    },\n    {\n      \"parameters\": {\n        \"operation\": \"insert\",\n        \"schema\": \"public\",\n        \"table\": \"whatsapp_messages\",\n        \"columns\": \"session_id,user_id,phone_number,direction,body,created_at\",\n        \"dataToSend\": \"{\n          \\\"session_id\\\": \\\"{{ $node[\\\"extract-request\\\"].json.sessionId }}\\\",\n          \\\"user_id\\\": \\\"{{ $node[\\\"extract-request\\\"].json.userId }}\\\",\n          \\\"phone_number\\\": \\\"{{ $node[\\\"extract-request\\\"].json.phone }}\\\",\n          \\\"direction\\\": \\\"outbound\\\",\n          \\\"body\\\": \\\"{{ $node[\\\"format-reply\\\"].json.message }}\\\",\n          \\\"created_at\\\": \\\"{{ $node[\\\"extract-request\\\"].json.timestamp }}\\\"\n        }\"\n      },\n      \"id\": \"log-message\",\n      \"name\": \"Log Message\",\n      \"type\": \"n8n-nodes-base.supabase\",\n      \"typeVersion\": 1,\n      \"position\": [1450, 400],\n      \"notes\": \"Audit log of magic content sent\"\n    },\n    {\n      \"parameters\": {\n        \"functionCode\": \"// Send error message to user\\nreturn {\\n  phone: $input.first().json.phone,\\n  message: \\\"Unable to process your magic content request. Please try again or contact support.\\\",\\n  error: true\\n};\"\n      },\n      \"id\": \"handle-error\",\n      \"name\": \"Handle Error\",\n      \"type\": \"n8n-nodes-base.function\",\n      \"typeVersion\": 1,\n      \"position\": [1050, 300],\n      \"notes\": \"Error handling for content generation failures\"\n    },\n    {\n      \"parameters\": {\n        \"url\": \"=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages\",\n        \"authentication\": \"predefinedCredentialType\",\n        \"nodeCredentialType\": \"twilioApi\",\n        \"method\": \"POST\",\n        \"bodyParametersJson\": \"{\\n  \\\"From\\\": \\\"whatsapp:+13369996930\\\",\\n  \\\"To\\\": \\\"whatsapp:{{ $node[\\\"handle-error\\\"].json.phone }}\\\",\\n  \\\"Body\\\": \\\"{{ $node[\\\"handle-error\\\"].json.message }}\\\"\\n}\",\n        \"options\": {\n          \"timeout\": 10000\n        }\n      },\n      \"id\": \"send-error-message\",\n      \"name\": \"Send Error Message\",\n      \"type\": \"n8n-nodes-base.httpRequest\",\n      \"typeVersion\": 4,\n      \"position\": [1250, 300],\n      \"notes\": \"Notify user of generation failure\"\n    }\n  ],\n  \"connections\": {\n    \"webhook-trigger\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"extract-request\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"extract-request\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"check-opt-in\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"check-opt-in\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"validate-opt-in\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"validate-opt-in\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"generate-content\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"generate-content\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"format-reply\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"format-reply\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"send-content\",\n            \"type\": \"main\",\n            \"index\": 0\n          },\n          {\n            \"node\": \"save-content\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"send-content\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"log-message\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    }\n  },\n  \"active\": true,\n  \"settings\": {\n    \"executionOrder\": \"v1\"\n  }\n}

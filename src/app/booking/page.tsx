@@ -1,52 +1,11 @@
 "use client";
 
-import { useState, useEffect, useMemo, Component, ReactNode } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
-
-// Error Boundary for catching uncaught errors
-class ErrorBoundary extends Component<
-  { children: ReactNode },
-  { hasError: boolean; error?: Error }
-> {
-  constructor(props: { children: ReactNode }) {
-    super(props);
-    this.state = { hasError: false };
-  }
-
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: any) {
-    console.error("ErrorBoundary caught:", error, errorInfo);
-    toast.error("An unexpected error occurred. Please refresh the page.");
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4 flex items-center justify-center">
-          <div className="bg-white rounded-lg shadow-lg p-8 max-w-md text-center">
-            <h2 className="text-2xl font-bold text-red-600 mb-4">Oops!</h2>
-            <p className="text-gray-600 mb-6">Something went wrong. Please refresh the page and try again.</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              Refresh Page
-            </button>
-          </div>
-        </div>
-      );
-    }
-
-    return this.props.children;
-  }
-}
 
 // API call with timeout protection
 async function fetchWithTimeout<T>(
@@ -102,7 +61,6 @@ function CheckoutForm({ onSuccess }: { onSuccess: () => void }) {
 
       if (error) {
         toast.error(`Payment failed: ${error.message}`);
-        console.error('Payment error', error);
         setLoading(false);
         return;
       }
@@ -114,8 +72,6 @@ function CheckoutForm({ onSuccess }: { onSuccess: () => void }) {
       }
     } catch (err: any) {
       toast.error(`Payment error: ${err?.message || 'Unknown error'}`);
-      console.error('Payment submission error', err);
-    } finally {
       setLoading(false);
     }
   };
@@ -193,13 +149,13 @@ export default function BookingPage() {
     []
   );
   const [formData, setFormData] = useState({
-    roomType: "overwater room",
+    roomType: "overwater bungalow",
     checkInDate: "",
     checkOutDate: "",
     location: "Belize",
     groupSize: 2,
     tourBudget: 500,
-    interests: ["snorkeling", "fishing"],
+    interests: ["snorkeling", "dining"],
     activityLevel: "medium" as const,
   });
 
@@ -237,18 +193,36 @@ export default function BookingPage() {
       return;
     }
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const checkIn = new Date(formData.checkInDate);
+    const checkOut = new Date(formData.checkOutDate);
+
+    if (checkIn < today) {
+      toast.error("Check-in date cannot be in the past");
+      return;
+    }
+
+    if (checkOut <= checkIn) {
+      toast.error("Check-out must be after check-in");
+      return;
+    }
+
+    const nights = Math.round((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24));
+    if (nights < 2) {
+      toast.error("Minimum stay is 2 nights");
+      return;
+    }
+
+    if (nights > 30) {
+      toast.error("Maximum stay is 30 nights");
+      return;
+    }
+
     setIsLoading(true);
     const loadingToast = toast.loading("Running agents... Price Scout & Experience Curator");
 
     try {
-      if (process.env.NODE_ENV !== "production") {
-        console.debug("[Book Flow] Starting booking with data:", {
-          roomType: formData.roomType,
-          guests: formData.groupSize,
-          dates: `${formData.checkInDate} to ${formData.checkOutDate}`,
-        });
-      }
-
       const data: BookingResult = await fetchWithTimeout<BookingResult>(
         "/api/book-flow",
         {
@@ -263,9 +237,6 @@ export default function BookingPage() {
         throw new Error(data.error || "Booking failed");
       }
 
-      if (process.env.NODE_ENV !== "production") {
-        console.debug("[Book Flow] Success:", { beatPrice: data.beat_price, total: data.curated_package.total });
-      }
       setResult(data);
 
       // If server returned a client_secret from Stripe, open payment modal
@@ -276,7 +247,6 @@ export default function BookingPage() {
       toast.dismiss(loadingToast);
       toast.success("Booking processed successfully!");
     } catch (error) {
-      console.error("[Book Flow] Error:", error);
       toast.dismiss(loadingToast);
       toast.error(error instanceof Error ? error.message : "An error occurred");
     } finally {
@@ -289,9 +259,6 @@ export default function BookingPage() {
     if (!result) return;
     try {
       setIsLoading(true);
-      if (process.env.NODE_ENV !== "production") {
-        console.debug("[Payment] Creating payment intent for amount:", result.curated_package.total);
-      }
 
       const data = await fetchWithTimeout<any>(
         '/api/stripe/create-payment-intent',
@@ -311,13 +278,9 @@ export default function BookingPage() {
         throw new Error(data.error);
       }
 
-      if (process.env.NODE_ENV !== "production") {
-        console.debug("[Payment] Payment intent created:", data.client_secret);
-      }
       setPaymentOptions({ clientSecret: data.client_secret });
       setShowPayment(true);
     } catch (err) {
-      console.error("[Payment] Error:", err);
       toast.error(err instanceof Error ? err.message : 'Payment setup failed');
     } finally {
       setIsLoading(false);
@@ -326,14 +289,13 @@ export default function BookingPage() {
 
   return (
     <ProtectedRoute>
-      <ErrorBoundary>
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
           <div className="max-w-7xl mx-auto">
             <h1 className="text-4xl font-bold text-gray-900 mb-2">
-              {formData.location} Booking Assistant
+              Lina Point Resort Booking
             </h1>
             <p className="text-lg text-gray-600 mb-8">
-              AI-powered price comparison & tour curation powered by LangGraph & Grok-4
+              AI-powered price comparison & experience curation — San Pedro, Belize
             </p>
 
           {!result ? (
@@ -350,63 +312,63 @@ export default function BookingPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Room Type
                     </label>
-                    <input
-                      type="text"
+                    <select
                       name="roomType"
                       value={formData.roomType}
                       onChange={handleInputChange}
-                      placeholder="e.g., overwater room, beach suite"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  {/* Location */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Destination
-                    </label>
-                    <select
-                      name="location"
-                      value={formData.location}
-                      onChange={handleInputChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
-                      <option value="Belize">Belize</option>
-                      <option value="Costa Rica">Costa Rica</option>
-                      <option value="Mexico">Mexico</option>
-                      <option value="Caribbean">Caribbean Islands</option>
+                      <option value="overwater bungalow">Overwater Bungalow — from $299/night</option>
+                      <option value="reef suite">Reef Suite — from $249/night</option>
+                      <option value="beach villa">Beach Villa — from $199/night</option>
                     </select>
                   </div>
 
-                  {/* Check-in Date */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Check-in Date
-                    </label>
-                    <input
-                      type="date"
-                      name="checkInDate"
-                      value={formData.checkInDate}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      required
-                    />
+                  {/* Dates Row */}
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Check-in Date */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Check-in
+                      </label>
+                      <input
+                        type="date"
+                        name="checkInDate"
+                        value={formData.checkInDate}
+                        onChange={handleInputChange}
+                        min={new Date().toISOString().split('T')[0]}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        required
+                      />
+                    </div>
+
+                    {/* Check-out Date */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Check-out
+                      </label>
+                      <input
+                        type="date"
+                        name="checkOutDate"
+                        value={formData.checkOutDate}
+                        onChange={handleInputChange}
+                        min={formData.checkInDate || new Date().toISOString().split('T')[0]}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        required
+                      />
+                    </div>
                   </div>
 
-                  {/* Check-out Date */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Check-out Date
-                    </label>
-                    <input
-                      type="date"
-                      name="checkOutDate"
-                      value={formData.checkOutDate}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      required
-                    />
-                  </div>
+                  {formData.checkInDate && formData.checkOutDate && (() => {
+                    const nights = Math.round(
+                      (new Date(formData.checkOutDate).getTime() - new Date(formData.checkInDate).getTime()) / (1000 * 60 * 60 * 24)
+                    );
+                    return nights > 0 ? (
+                      <p className="text-sm text-blue-600 -mt-4">
+                        {nights} night{nights !== 1 ? 's' : ''} stay
+                      </p>
+                    ) : null;
+                  })()}
 
                   {/* Group Size */}
                   <div>
@@ -462,24 +424,31 @@ export default function BookingPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-3">
                       Tour Interests
                     </label>
-                    <div className="space-y-2">
-                      {["snorkeling", "fishing", "mainland", "dining"].map(
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { value: "snorkeling", label: "Snorkeling & Reef" },
+                        { value: "fishing", label: "Sport Fishing" },
+                        { value: "mainland", label: "Mayan Ruins" },
+                        { value: "cenote", label: "Cenote Swimming" },
+                        { value: "kayaking", label: "Mangrove Kayaking" },
+                        { value: "dining", label: "Culinary Dining" },
+                      ].map(
                         (interest) => (
-                          <div key={interest} className="flex items-center">
+                          <div key={interest.value} className="flex items-center">
                             <input
                               type="checkbox"
-                              id={interest}
-                              name={interest}
-                              value={interest}
-                              checked={formData.interests.includes(interest)}
+                              id={interest.value}
+                              name={interest.value}
+                              value={interest.value}
+                              checked={formData.interests.includes(interest.value)}
                               onChange={handleInputChange}
                               className="h-4 w-4 text-blue-600 border-gray-300 rounded"
                             />
                             <label
-                              htmlFor={interest}
-                              className="ml-3 text-sm text-gray-700 capitalize"
+                              htmlFor={interest.value}
+                              className="ml-2 text-sm text-gray-700"
                             >
-                              {interest}
+                              {interest.label}
                             </label>
                           </div>
                         )
@@ -697,7 +666,6 @@ export default function BookingPage() {
           )}
         </div>
       </div>
-      </ErrorBoundary>
     </ProtectedRoute>
   );
 }

@@ -112,7 +112,7 @@ const MarketingCrewAnnotation = Annotation.Root({
   mlInsights: Annotation<string[]>,
   promptUpdates: Annotation<string[]>,
   iteration: Annotation<number>,
-  status: Annotation<string>,
+  status: Annotation<"researching" | "generating_content" | "scheduling_posts" | "engaging" | "measuring" | "optimizing" | "completed">,
 });
 
 // ============================================================================
@@ -152,7 +152,7 @@ Return JSON with: { trends: [], competitors: [], influencers: [], opportunities:
         opportunities: research.opportunities || [],
         refinementNotes: `Analyzed 30-day trends for ${state.campaignBrief.targetAudience}. Found ${research.opportunities?.length || 0} opportunities.`
       },
-      status: "researching"
+      status: "researching" as const
     };
   } catch (error) {
     debugLog("[ResearchAgent] Error:", error);
@@ -217,20 +217,20 @@ Format as JSON array: [{ type, platform, content, hashtags, cta }]`;
       ...state,
       generatedContent,
       contentRefinement: `Generated ${generatedContent.length} pieces of content`,
-      status: "generating_content"
+      status: "generating_content" as const
     };
   } catch (error) {
     debugLog("[ContentAgent] Error:", error);
     return {
       ...state,
       generatedContent: [{
-        type: "social_post",
+        type: "social_post" as const,
         platform: "instagram",
         title: "The Magic Awaits",
         content: "✨ The magic is YOU. Discover your transformation at Lina Point. #MagicIsYou #OverwaterLuxury",
         hashtags: ["#linapoint", "#belize", "#wellness"],
         callToAction: "Book now",
-        status: "draft"
+        status: "draft" as const,
       }],
       contentRefinement: "Fallback content generated"
     };
@@ -262,7 +262,7 @@ async function scheduleAndPostContent(state: typeof MarketingCrewAnnotation.Stat
   return {
     ...state,
     scheduleStatus,
-    status: "scheduling_posts"
+    status: "scheduling_posts" as const
   };
 }
 
@@ -307,7 +307,7 @@ async function setupEngagementCampaigns(state: typeof MarketingCrewAnnotation.St
   return {
     ...state,
     engagementCampaigns,
-    status: "engaging"
+    status: "engaging" as const
   };
 }
 
@@ -367,7 +367,7 @@ Generate JSON with:
       currentMetrics: mockMetrics,
       mlInsights: analysis.mlInsights || [],
       promptUpdates: analysis.promptUpdates || [],
-      status: "optimizing"
+      status: "optimizing" as const
     };
   } catch (error) {
     debugLog("[SelfImprovementAgent] Error:", error);

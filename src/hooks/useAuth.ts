@@ -11,6 +11,7 @@ export function useAuth() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AuthError | null>(null);
+  const [token, setToken] = useState<string | null>(null);
 
   // Fetch user profile
   const fetchProfile = useCallback(async (userId: string) => {
@@ -44,6 +45,9 @@ export function useAuth() {
 
         if (currentUser) {
           setUser(currentUser as unknown as User);
+          // Get session for access token
+          const { data: { session } } = await supabase.auth.getSession();
+          setToken(session?.access_token || null);
           await fetchProfile(currentUser.id);
         }
       } catch (err) {
@@ -61,10 +65,12 @@ export function useAuth() {
       async (event, session) => {
         if (session?.user) {
           setUser(session.user as unknown as User);
+          setToken(session.access_token || null);
           await fetchProfile(session.user.id);
         } else {
           setUser(null);
           setProfile(null);
+          setToken(null);
         }
       }
     );
@@ -188,6 +194,7 @@ export function useAuth() {
     profile,
     loading,
     error,
+    token,
     signIn,
     signUp,
     signOut,

@@ -1,61 +1,64 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-
-const isProd = process.env.NODE_ENV === 'production';
-const debugLog = (...args: unknown[]) => {
-  if (!isProd) {
-    console.log(...args);
-  }
-};
+import { logDebug, logError } from '@/lib/logger';
+import { handleServiceError } from '@/lib/errorHandler';
 
 export async function GET() {
   try {
     const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!SUPABASE_URL || !SERVICE_KEY) {
-      return NextResponse.json({ error: 'Supabase service key not configured' }, { status: 500 });
+      return handleServiceError('Supabase', 'Service key not configured');
     }
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
-    const { data: profiles, error } = await admin.from('profiles').select('id,user_id,birthday,anniversary,opt_in_magic');
+    // Optimized query - only select necessary fields
+    const { data: profiles, error } = await admin
+      .from('profiles')
+      .select('id,user_id,birthday,anniversary,opt_in_magic');
+    
     if (error) {
-      console.error('Error fetching profiles for events', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return handleServiceError('Supabase', error);
     }
 
     const today = new Date();
-    const todayMonth = today.getUTCMonth() + 1; // 1-12
+    const todayMonth = today.getUTCMonth() + 1;
     const todayDay = today.getUTCDate();
 
     const triggers: Array<{ user_id: string; reason: string }> = [];
 
-    (profiles || []).forEach((p: any) => {
-      try {
-        if (p.birthday) {
-          const d = new Date(p.birthday);
-          if (d.getUTCMonth() + 1 === todayMonth && d.getUTCDate() === todayDay) {
-            debugLog(`Trigger magic gen for user ${p.user_id} (birthday)`);
-            triggers.push({ user_id: p.user_id, reason: 'birthday' });
+    profiles?.forEach((profile) => {
+      if (!profile.user_id) return;
+
+      if (profile.birthday) {
+        try {
+          const birthDate = new Date(profile.birthday);
+          if (birthDate.getUTCMonth() + 1 === todayMonth && birthDate.getUTCDate() === todayDay) {
+            logDebug(`Birthday trigger for user ${profile.user_id}`);
+            triggers.push({ user_id: profile.user_id, reason: 'birthday' });
           }
+        } catch {
+          // Ignore parse errors
         }
-        if (p.anniversary) {
-          const d2 = new Date(p.anniversary);
-          if (d2.getUTCMonth() + 1 === todayMonth && d2.getUTCDate() === todayDay) {
-            debugLog(`Trigger magic gen for user ${p.user_id} (anniversary)`);
-            triggers.push({ user_id: p.user_id, reason: 'anniversary' });
+      }
+
+      if (profile.anniversary) {
+        try {
+          const anniversaryDate = new Date(profile.anniversary);
+          if (anniversaryDate.getUTCMonth() + 1 === todayMonth && anniversaryDate.getUTCDate() === todayDay) {
+            logDebug(`Anniversary trigger for user ${profile.user_id}`);
+            triggers.push({ user_id: profile.user_id, reason: 'anniversary' });
           }
+        } catch {
+          // Ignore parse errors
         }
-      } catch (e) {
-        // Ignore parse errors per profile
       }
     });
 
-    // Stubbed: in production you would enqueue jobs or call /api/analyze-profile for each user
-
     return NextResponse.json({ triggers });
   } catch (err) {
-    console.error('check-events error', err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    logError('check-events failed', err);
+    return handleServiceError('Event Check', err);
   }
 }

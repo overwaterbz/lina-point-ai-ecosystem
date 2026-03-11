@@ -4,12 +4,32 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 // Routes that don't require authentication
 const PUBLIC_ROUTES = ['/auth/login', '/auth/signup', '/auth/verify-email', '/'];
 
+// API routes that handle their own auth (cron jobs, webhooks)
+const SELF_AUTH_API_ROUTES = [
+  '/api/cron/',
+  '/api/whatsapp-webhook',
+  '/api/whatsapp-proactive',
+  '/api/stripe/webhook',
+  '/api/system/',
+];
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const requestId = crypto.randomUUID();
+  const start = Date.now();
 
   // Allow public routes
   if (PUBLIC_ROUTES.includes(pathname)) {
-    return NextResponse.next();
+    const response = NextResponse.next();
+    response.headers.set('x-request-id', requestId);
+    return response;
+  }
+
+  // API routes that handle their own auth pass through with tracing
+  if (SELF_AUTH_API_ROUTES.some(route => pathname.startsWith(route))) {
+    const response = NextResponse.next();
+    response.headers.set('x-request-id', requestId);
+    return response;
   }
 
   let response = NextResponse.next({
@@ -44,6 +64,15 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = '/auth/login';
     return NextResponse.redirect(url);
+  }
+
+  // Add tracing headers
+  response.headers.set('x-request-id', requestId);
+
+  // Log API requests in development
+  if (process.env.NODE_ENV !== 'production' && pathname.startsWith('/api/')) {
+    const duration = Date.now() - start;
+    console.log(`[API] ${request.method} ${pathname} | ${duration}ms | rid:${requestId.slice(0, 8)}`);
   }
 
   return response;

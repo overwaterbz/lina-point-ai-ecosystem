@@ -1,0 +1,235 @@
+{
+  "name": "Lina Point - Booking Flow",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 100],
+      "webhookId": "lina-booking-trigger",
+      "notes": "Triggered when booking request comes from WhatsApp or admin"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract booking details from webhook payload\nreturn {\n  phone: $input.first().json.phone || $input.first().json.body.phone,\n  message: $input.first().json.message || $input.first().json.body.message,\n  userId: $input.first().json.userId || $input.first().json.body.userId,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "extract-details",
+      "name": "Extract Booking Details",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 100],
+      "notes": "Parse incoming booking request"
+    },
+    {
+      "parameters": {
+        "url": "https://lina-point-ai-ecosystem.vercel.app/api/book-flow",
+        "method": "POST",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "bodyParametersJson": "{\n  \"location\": \"{{ $node[\\\"extract-details\\\"].json.location || 'Belize' }}\",\n  \"roomType\": \"{{ $node[\\\"extract-details\\\"].json.roomType }}\",\n  \"checkInDate\": \"{{ $node[\\\"extract-details\\\"].json.checkInDate }}\",\n  \"checkOutDate\": \"{{ $node[\\\"extract-details\\\"].json.checkOutDate }}\",\n  \"groupSize\": \"{{ $node[\\\"extract-details\\\"].json.groupSize || 2 }}\",\n  \"interests\": \"{{ $node[\\\"extract-details\\\"].json.interests }}\"\n}",
+        "options": {
+          "timeout": 45000,
+          "redirect": "follow"
+        }
+      },
+      "id": "call-book-flow",
+      "name": "Call Book Flow API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 100],
+      "notes": "Calls main booking orchestration endpoint that runs Price Scout + Curator"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO whatsapp_messages (session_id, user_id, phone_number, direction, body, created_at)\nVALUES (\n  '{{ $node[\"extract-details\"].json.sessionId }}',\n  '{{ $node[\"extract-details\"].json.userId }}',\n  '{{ $node[\"extract-details\"].json.phone }}',\n  'booking_initiated',\n  '{{ $node[\"extract-details\"].json.message }}',\n  NOW()\n)",
+        "options": {
+          "nodeCredentialType": "postgres"
+        }
+      },
+      "id": "log-booking-start",
+      "name": "Log Booking Start",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [650, 250],
+      "notes": "Log that booking flow was triggered"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Check if booking was successful\nconst bookingResult = $input.first().json;\n\nif (!bookingResult.success) {\n  return {\n    status: 'failed',\n    error: bookingResult.error,\n    price: null,\n    tours: [],\n    message: 'Booking search failed. Please try again.'\n  };\n}\n\nreturn {\n  status: 'success',\n  price: bookingResult.beat_price,\n  savings: bookingResult.savings_percent,\n  tours: bookingResult.curated_package.tours.slice(0, 3),\n  total: bookingResult.curated_package.total,\n  message: `Found amazing rates! $${bookingResult.beat_price}/night (save ${bookingResult.savings_percent}%). Top tours: ${bookingResult.curated_package.tours.slice(0, 2).map(t => t.name).join(', ')}`\n};"
+      },
+      "id": "process-booking-results",
+      "name": "Process Booking Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 100],
+      "notes": "Format booking results for WhatsApp reply"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "whatsapp_sessions",
+        "idField": "phone_number",
+        "columns": "phone_number,last_message,updated_at,context",
+        "dataToSend": "{\n  \"phone_number\": \"{{ $node[\\\"extract-details\\\"].json.phone }}\",\n  \"last_message\": \"{{ $node[\\\"process-booking-results\\\"].json.message }}\",\n  \"updated_at\": \"{{ $node[\\\"extract-details\\\"].json.timestamp }}\",\n  \"context\": \"{{ JSON.stringify({pending_action: {type: 'booking', data: $node[\\\"process-booking-results\\\"].json}}) }}\"\n}"
+      },
+      "id": "update-session",
+      "name": "Update Session",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [850, 250],
+      "notes": "Store booking context in session"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twilioApi",
+        "method": "POST",
+        "bodyParametersJson": "{\n  \"From\": \"whatsapp:+13369996930\",\n  \"To\": \"whatsapp:{{ $node[\\\"extract-details\\\"].json.phone }}\",\n  \"Body\": \"{{ $node[\\\"process-booking-results\\\"].json.message }}\"\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "send-whatsapp-reply",
+      "name": "Send WhatsApp Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 100],
+      "notes": "Send booking results back to guest via WhatsApp"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "whatsapp_messages",
+        "columns": "session_id,user_id,phone_number,direction,body,created_at",
+        "dataToSend": "{\n  \"session_id\": \"{{ $node[\\\"extract-details\\\"].json.sessionId }}\",\n  \"user_id\": \"{{ $node[\\\"extract-details\\\"].json.userId }}\",\n  \"phone_number\": \"{{ $node[\\\"extract-details\\\"].json.phone }}\",\n  \"direction\": \"outbound\",\n  \"body\": \"{{ $node[\\\"process-booking-results\\\"].json.message }}\",\n  \"created_at\": \"{{ $node[\\\"extract-details\\\"].json.timestamp }}\"\n}"
+      },
+      "id": "log-booking-result",
+      "name": "Log Booking Result",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 250],
+      "notes": "Audit log of booking response sent to guest"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twilioApi",
+        "method": "POST",
+        "bodyParametersJson": "{\n  \"From\": \"whatsapp:+13369996930\",\n  \"To\": \"whatsapp:{{ $env.ADMIN_PHONE }}\",\n  \"Body\": \"New booking request from {{ $node[\\\"extract-details\\\"].json.phone }}!\\n💰 Beat Price: ${{ $node[\\\"process-booking-results\\\"].json.price }}/night\\n💾 Savings: {{ $node[\\\"process-booking-results\\\"].json.savings }}%\\n📍 {{ $node[\\\"process-booking-results\\\"].json.tours.length }} tours curated\"\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "notify-admin",
+      "name": "Notify Admin via WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1200, 100],
+      "notes": "Alert admin of new booking request (optional)"
+    },
+    {
+      "parameters": {
+        "errorMessage": "Booking flow failed",
+        "operation": "setMessage"
+      },
+      "id": "error-handler",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.nodeTrigger",
+      "typeVersion": 1,
+      "position": [650, 400],
+      "notes": "Catch and handle errors from API calls"
+    }
+  ],
+  "connections": {
+    "webhook-trigger": {
+      "main": [
+        [
+          {
+            "node": "extract-details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "extract-details": {
+      "main": [
+        [
+          {
+            "node": "call-book-flow",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "log-booking-start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "call-book-flow": {
+      "main": [
+        [
+          {
+            "node": "process-booking-results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "process-booking-results": {
+      "main": [
+        [
+          {
+            "node": "update-session",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "send-whatsapp-reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "send-whatsapp-reply": {
+      "main": [
+        [
+          {
+            "node": "log-booking-result",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "notify-admin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

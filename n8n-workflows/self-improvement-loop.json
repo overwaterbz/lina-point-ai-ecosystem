@@ -1,0 +1,136 @@
+{
+  "name": "Lina Point - Self-Improvement Loop",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyWeek",
+              "dayOfWeek": "Monday",
+              "hour": 9
+            }
+          ]
+        }
+      },
+      "id": "weekly-trigger",
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 100],
+      "notes": "Runs every Monday at 9 AM to analyze past week"
+    },
+    {
+      "parameters": {
+        "operation": "query",
+        "query": "SELECT * FROM agent_runs WHERE created_at > NOW() - INTERVAL '7 days' ORDER BY created_at DESC LIMIT 100",
+        "options": {
+          "nodeCredentialType": "supabase"
+        }
+      },
+      "id": "get-agent-runs",
+      "name": "Get Agent Runs",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 100],
+      "notes": "Retrieve all agent executions from past week"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Calculate success/failure rates\\nconst runs = $input.first().json;\\nlet successCount = 0;\\nlet failCount = 0;\\nlet priceScoutSuccess = 0;\\nlet priceScoutTotal = 0;\\nlet curatorSuccess = 0;\\nlet curatorTotal = 0;\\nlet contentSuccess = 0;\\nlet contentTotal = 0;\\n\\nconst failedPatterns = {};\\nconst lowScores = [];\\n\\nruns.forEach(run => {\\n  if (run.success) successCount++;\\n  else failCount++;\\n  \\n  if (run.agent_type === 'price_scout') {\\n    priceScoutTotal++;\\n    if (run.success) priceScoutSuccess++;\\n  } else if (run.agent_type === 'curator') {\\n    curatorTotal++;\\n    if (run.success) curatorSuccess++;\\n  } else if (run.agent_type === 'content_magic') {\\n    contentTotal++;\\n    if (run.success) contentSuccess++;\\n  }\\n  \\n  if (!run.success) {\\n    const action = run.action || 'unknown';\\n    failedPatterns[action] = (failedPatterns[action] || 0) + 1;\\n  }\\n  \\n  if (run.output_data?.score && run.output_data.score < 0.7) {\\n    lowScores.push({\\n      agent: run.agent_type,\\n      action: run.action,\\n      score: run.output_data.score,\\n      timestamp: run.created_at\\n    });\\n  }\\n});\\n\\nconst overallSuccessRate = ((successCount / runs.length) * 100).toFixed(1);\\n\\nreturn {\\n  totalRuns: runs.length,\\n  successCount,\\n  failCount,\\n  overallSuccessRate,\\n  agentMetrics: {\\n    priceScout: { success: priceScoutSuccess, total: priceScoutTotal, rate: priceScoutTotal > 0 ? ((priceScoutSuccess/priceScoutTotal)*100).toFixed(1) : 'N/A' },\\n    curator: { success: curatorSuccess, total: curatorTotal, rate: curatorTotal > 0 ? ((curatorSuccess/curatorTotal)*100).toFixed(1) : 'N/A' },\\n    contentMagic: { success: contentSuccess, total: contentTotal, rate: contentTotal > 0 ? ((contentSuccess/contentTotal)*100).toFixed(1) : 'N/A' }\\n  },\\n  failedPatterns: Object.entries(failedPatterns).sort((a, b) => b[1] - a[1]).slice(0, 5),\\n  lowScores: lowScores.slice(0, 10),\\n  allRuns: runs\\n};"
+      },
+      "id": "analyze-metrics",
+      "name": "Analyze Metrics",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 100],
+      "notes": "Calculate success rates and identify patterns"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate improvement suggestions\\nconst metrics = $input.first().json;\\n\\nconst suggestions = [];\\nconst urgentIssues = [];\\n\\n// Check overall success rate\\nif (parseFloat(metrics.overallSuccessRate) < 85) {\\n  urgentIssues.push(`Overall success rate is ${metrics.overallSuccessRate}% (target: 95%)`);\\n}\\n\\n// Check individual agent performance\\nif (parseFloat(metrics.agentMetrics.priceScout.rate) < 80) {\\n  suggestions.push({\\n    priority: 'high',\\n    agent: 'Price Scout',\\n    issue: `Success rate ${metrics.agentMetrics.priceScout.rate}% is below target`,\\n    suggestion: 'Review OTA API error handling and improve fallback logic'\\n  });\\n}\\n\\nif (parseFloat(metrics.agentMetrics.curator.rate) < 80) {\\n  suggestions.push({\\n    priority: 'high',\\n    agent: 'Experience Curator',\\n    issue: `Success rate ${metrics.agentMetrics.curator.rate}% is below target`,\\n    suggestion: 'Review interest matching logic and expand tour database'\\n  });\\n}\\n\\n// Check low-scoring runs\\nif (metrics.lowScores.length > 0) {\\n  const topLowAgent = metrics.lowScores.reduce((a, b) => {\\n    return (a.agent === b.agent) ? a : b;\\n  });\\n  suggestions.push({\\n    priority: 'medium',\\n    agent: topLowAgent.agent,\\n    issue: `Multiple low-quality responses (scores < 0.7)`,\\n    suggestion: 'Ask user for feedback on this agent and update prompts'\\n  });\\n}\\n\\n// Check for repeated failures\\nif (metrics.failedPatterns.length > 0) {\\n  metrics.failedPatterns.slice(0, 2).forEach(pattern => {\\n    suggestions.push({\\n      priority: 'medium',\\n      action: pattern[0],\\n      count: pattern[1],\\n      suggestion: `Repeated failures (${pattern[1]}x): '${pattern[0]}' - investigate root cause`\\n    });\\n  });\\n}\\n\\nreturn {\\n  hasUrgentIssues: urgentIssues.length > 0,\\n  urgentIssues,\\n  suggestions: suggestions.slice(0, 5),\\n  recommendedActions: [\\n    { priority: 1, action: 'Review failed agent runs in database' },\\n    { priority: 2, action: 'A/B test new system prompts with top 10% of suggestions' },\\n    { priority: 3, action: 'Update agent training data with recent successful examples' }\\n  ]\\n};"
+      },
+      "id": "generate-suggestions",
+      "name": "Generate Suggestions",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 100],
+      "notes": "Identify issues and propose improvements"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format weekly report for admin\\nconst metrics = $input.first().json;\\nconst suggestions = $input.last().json;\\n\\nlet report = `📊 Lina Point - Weekly AI Performance Report\\n\\n`;\\nreport += `📈 Overall Metrics:\\n`;\\nreport += `  Total Runs: ${metrics.totalRuns}\\n`;\\nreport += `  Success Rate: ${metrics.overallSuccessRate}%\\n`;\\nreport += `  Failures: ${metrics.failCount}\\n\\n`;\\n\\nreport += `🤖 Agent Performance:\\n`;\\nreport += `  Price Scout: ${metrics.agentMetrics.priceScout.rate}% (${metrics.agentMetrics.priceScout.success}/${metrics.agentMetrics.priceScout.total})\\n`;\\nreport += `  Experience Curator: ${metrics.agentMetrics.curator.rate}% (${metrics.agentMetrics.curator.success}/${metrics.agentMetrics.curator.total})\\n`;\\nreport += `  Magic Content: ${metrics.agentMetrics.contentMagic.rate}% (${metrics.agentMetrics.contentMagic.success}/${metrics.agentMetrics.contentMagic.total})\\n\\n`;\\n\\nif (suggestions.urgentIssues.length > 0) {\\n  report += `🚨 URGENT ISSUES:\\n`;\\n  suggestions.urgentIssues.forEach(issue => {\\n    report += `  ⚠️ ${issue}\\n`;\\n  });\\n  report += `\\n`;\\n}\\n\\nreport += `💡 Top Recommendations:\\n`;\\nsuggestions.suggestions.slice(0, 3).forEach((s, i) => {\\n  report += `  ${i+1}. [${s.priority}] ${s.agent || s.action}: ${s.suggestion}\\n`;\\n});\\n\\nreport += `\\n🔗 Full report: https://lina-point-ai-ecosystem.vercel.app/admin\\n`;\\n\\nreturn {\\n  report,\\n  summary: {\\n    totalRuns: metrics.totalRuns,\\n    successRate: metrics.overallSuccessRate,\\n    botIssues: suggestions.urgentIssues.length > 0,\\n    recommendations: suggestions.suggestions.length\\n  }\\n};"
+      },
+      "id": "format-report",
+      "name": "Format Report",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 100],
+      "notes": "Format detailed weekly report for admin"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twilioApi",
+        "method": "POST",
+        "bodyParametersJson": "{\n  \"From\": \"whatsapp:+13369996930\",\n  \"To\": \"whatsapp:{{ $env.ADMIN_PHONE }}\",\n  \"Body\": \"{{ $node[\\\"format-report\\\"].json.report }}\"\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "send-report",
+      "name": "Send Report to Admin",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 100],
+      "notes": "Send weekly analysis to admin via WhatsApp"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "agent_improvements",
+        "columns": "week_ending,total_runs,success_rate,top_issue,recommendations,created_at",
+        "dataToSend": "{\n  \"week_ending\": \"{{ new Date().toISOString() }}\",\n  \"total_runs\": \"{{ $node[\\\"analyze-metrics\\\"].json.totalRuns }}\",\n  \"success_rate\": \"{{ $node[\\\"analyze-metrics\\\"].json.overallSuccessRate }}\",\n  \"top_issue\": \"{{ $node[\\\"generate-suggestions\\\"].json.urgentIssues[0] || 'None' }}\",\n  \"recommendations\": \"{{ JSON.stringify($node[\\\"generate-suggestions\\\"].json.suggestions) }}\",\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}"
+      },
+      "id": "save-report",
+      "name": "Save Report to DB",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1250, 250],
+      "notes": "Store weekly analysis for historical tracking"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Check if we should test new prompts\\nconst suggestions = $input.first().json;\\n\\nif (suggestions.suggestions.length === 0) {\\n  return null;\\n}\\n\\n// Generate test prompt variations\\nconst testCandidates = suggestions.suggestions.slice(0, 2).map((s, idx) => ({\\n  id: `test_${new Date().getTime()}_${idx}`,\\n  targetAgent: s.agent,\\n  originalSuggestion: s.suggestion,\\n  testVersion: `v${new Date().getFullYear()}_w${Math.ceil((new Date() - new Date(new Date().getFullYear(), 0, 1)) / 604800000)}`,\\n  status: 'pending_approval',\\n  created_at: new Date().toISOString()\\n}));\\n\\nreturn {\\n  shouldTest: true,\\n  candidates: testCandidates,\\n  prompt: `Test the following prompt variations? (Requires manual approval)\\n${testCandidates.map((c, i) => `${i+1}. [${c.targetAgent}] ${c.originalSuggestion}`).join('\\n')}`\\n};"
+      },
+      "id": "propose-test",
+      "name": "Propose A/B Tests",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1250, 400],
+      "notes": "Identify candidates for prompt improvement A/B testing"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twilioApi",
+        "method": "POST",
+        "bodyParametersJson": "{\n  \"From\": \"whatsapp:+13369996930\",\n  \"To\": \"whatsapp:{{ $env.ADMIN_PHONE }}\",\n  \"Body\": \"{{ $node[\\\"propose-test\\\"].json.prompt }}\"\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "send-test-proposal",
+      "name": "Send Test Proposal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1450, 400],
+      "notes": "Ask admin for approval of prompt variations"
+    }
+  ],
+  "connections": {
+    "weekly-trigger": {
+      "main": [\n        [\n          {\n            \"node\": \"get-agent-runs\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"get-agent-runs\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"analyze-metrics\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"analyze-metrics\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"generate-suggestions\",\n            \"type\": \"main\",\n            \"index\": 0\n          },\n          {\n            \"node\": \"format-report\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"generate-suggestions\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"propose-test\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"format-report\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"send-report\",\n            \"type\": \"main\",\n            \"index\": 0\n          },\n          {\n            \"node\": \"save-report\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"propose-test\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"send-test-proposal\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    }\n  },\n  \"active\": true,\n  \"settings\": {\n    \"executionOrder\": \"v1\"\n  }\n}

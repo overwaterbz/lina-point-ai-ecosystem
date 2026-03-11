@@ -2,7 +2,6 @@
 
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import toast from 'react-hot-toast';
 
 export default function DashboardPage() {
   const { user, profile, loading, signOut } = useAuth();
@@ -12,21 +11,6 @@ export default function DashboardPage() {
     const { error } = await signOut();
     if (!error) {
       router.push('/auth/login');
-    }
-  };
-
-  const handleCheckEvents = async () => {
-    try {
-      toast('Checking events...', { icon: '🔎' });
-      const res = await fetch('/api/check-events');
-      const data = await res.json();
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('check-events result', data);
-      }
-      toast.success(`Check complete: ${data.triggers?.length || 0} triggers`);
-    } catch (err: any) {
-      console.error('check-events error', err);
-      toast.error(`Error: ${err?.message || String(err)}`);
     }
   };
 
@@ -44,20 +28,12 @@ export default function DashboardPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
             <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleCheckEvents}
-                className="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 px-4 rounded-lg transition"
-              >
-                Test check-events
-              </button>
-              <button
-                onClick={handleSignOut}
-                className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition"
-              >
-                Sign Out
-              </button>
-            </div>
+            <button
+              onClick={handleSignOut}
+              className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition"
+            >
+              Sign Out
+            </button>
           </div>
         </div>
       </nav>

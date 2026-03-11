@@ -1,0 +1,357 @@
+{
+  "title": "n8n Integration Reference",
+  "description": "Configuration and integration examples for Lina Point n8n workflows",
+  "workflows": {
+    "booking_flow": {
+      "name": "Booking Flow",
+      "trigger": "webhook",
+      "webhookPath": "/workflows/booking-trigger",
+      "description": "Handles guest booking requests from WhatsApp, calls Price Scout + Curator, returns best deal",
+      "expectedPayload": {
+        "phone": "+1234567890",
+        "userId": "uuid-12345",
+        "sessionId": "session-uuid",
+        "message": "I want to book a romantic getaway for 3 nights next month",
+        "checkInDate": "YYYY-MM-DD",
+        "checkOutDate": "YYYY-MM-DD",
+        "roomType": "oceanfront|garden|beachfront",
+        "groupSize": 2,
+        "interests": ["romance", "spa", "dining"]
+      },
+      "payloadTrigger": "In /src/app/api/whatsapp-webhook/route.ts after detecting action === 'booking'",
+      "codeExample": "See section: WEBHOOK_INTEGRATION_EXAMPLES below",
+      "expectedOutput": {
+        "status": "success|failed",
+        "price": 289,
+        "savings": 15.5,
+        "tours": [
+          {
+            "name": "Romantic Sunset Dinner",
+            "description": "5-course meal on private beach",
+            "price": 150
+          }
+        ],
+        "message": "Found amazing rates! $289/night (save 15.5%)..."
+      }
+    },
+    "magic_content_flow": {
+      "name": "Magic Content Flow",
+      "trigger": "webhook",
+      "webhookPath": "/workflows/magic-content-trigger",
+      "description": "Generates customized songs/videos based on guest occasion and preferences",
+      "expectedPayload": {
+        "phone": "+1234567890",
+        "userId": "uuid-12345",
+        "sessionId": "session-uuid",
+        "occasion": "honeymoon|anniversary|proposal|birthday",
+        "reservationId": "booking-uuid"
+      },
+      "payloadTrigger": "In /src/app/api/whatsapp-webhook/route.ts after detecting action === 'magic_content'",
+      "expectedOutput": {
+        "playlist_url": "https://open.spotify.com/playlist/...",
+        "video_url": "https://youtube.com/watch?v=...",
+        "song_credits": ["Artist 1", "Artist 2"],
+        "message": "✨ Your magical honeymoon content is ready!..."
+      }
+    },
+    "admin_notifications": {
+      "name": "Admin Notifications",
+      "trigger": "scheduled",
+      "schedule": "0 * * * * (every hour)",
+      "timezone": "America/Chicago (adjust to your resort timezone)",
+      "description": "Hourly summary of guest activity, conversion metrics, and anomaly alerts",
+      "features": [
+        "Count active sessions (past hour)",
+        "Count pending bookings",
+        "Calculate average response time",
+        "Detect errors and failures",
+        "Identify high-priority leads",
+        "Send WhatsApp alert to admin"
+      ],
+      "output": {
+        "summary": "📊 Lina Point - Last Hour Summary...",
+        "metrics": {
+          "sessions": 23,
+          "bookings": 5,
+          "conversionRate": "21.7%",
+          "responseTime": 3200,
+          "errors": 0
+        }
+      }
+    },
+    "self_improvement_loop": {
+      "name": "Self-Improvement Loop",
+      "trigger": "scheduled",
+      "schedule": "0 9 ? * MON (Monday 9 AM)",
+      "timezone": "America/Chicago (adjust to your resort timezone)",
+      "description": "Weekly analysis of agent performance, identifies improvement opportunities, proposes prompt variations to test",
+      "features": [
+        "Analyze 7-day agent_runs",
+        "Calculate success rates per agent",
+        "Identify failure patterns",
+        "Generate improvement suggestions",
+        "Propose A/B test variations",
+        "Send comprehensive report to admin"
+      ],
+      "output": {
+        "totalRuns": 542,
+        "successRate": "91.3%",
+        "report": "📊 Lina Point - Weekly AI Performance Report...",
+        "suggestions": [
+          {
+            "priority": "high",
+            "agent": "Price Scout",
+            "issue": "89% success rate is below target",
+            "suggestion": "Review OTA API error handling and improve fallback logic"
+          }
+        ]
+      }
+    }
+  },
+  "credentials": {
+    "supabase": {
+      "type": "postgres",
+      "fields": {
+        "host": "your-project.supabase.co",
+        "port": 5432,
+        "username": "postgres",
+        "password": "your-database-password",
+        "database": "postgres",
+        "ssl": true
+      },
+      "testQuery": "SELECT NOW() as current_time;"
+    },
+    "twilio": {
+      "type": "twilioApi",
+      "fields": {
+        "accountSid": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "authToken": "your-auth-token-here"
+      },
+      "testMessage": "✨ Twilio test message to +1234567890"
+    },
+    "httpHeaderAuth": {
+      "type": "httpHeaderAuth",
+      "purpose": "For Vercel API calls (optional, if automating env vars)",
+      "fields": {
+        "headerName": "Authorization",
+        "headerValue": "Bearer vercel_token_here"
+      }
+    }
+  },
+  "environmentVariables": {
+    "required": [
+      {
+        "name": "TWILIO_ACCOUNT_SID",
+        "source": "Twilio Console → Account SID",
+        "example": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      {
+        "name": "TWILIO_AUTH_TOKEN",
+        "source": "Twilio Console → Auth Token",
+        "example": "your-auth-token-here"
+      },
+      {
+        "name": "TWILIO_WHATSAPP_NUMBER",
+        "source": "Already configured in Vercel",
+        "example": "whatsapp:+13369996930"
+      },
+      {
+        "name": "ADMIN_PHONE",
+        "source": "Your admin WhatsApp number",
+        "example": "+13105551234"
+      },
+      {
+        "name": "SUPABASE_URL",
+        "source": "Supabase Dashboard → API settings",
+        "example": "https://xxxxxxxxx.supabase.co"
+      },
+      {
+        "name": "SUPABASE_SERVICE_KEY",
+        "source": "Supabase Dashboard → API settings",
+        "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+      }
+    ]
+  },
+  "webhookIntegration": {
+    "description": "How to connect WhatsApp webhook to n8n workflows",
+    "file": "/src/app/api/whatsapp-webhook/route.ts",
+    "location": "After detecting action type, before sending the API response",
+    "implementation": {
+      "bookingFlow": {
+        "trigger": "if (detectedAction === 'booking')",
+        "payload": {
+          "phone": "normalizedPhone",
+          "userId": "profile.id",
+          "sessionId": "sessionId",
+          "message": "userMessage",
+          "checkInDate": "extractedData.checkInDate",
+          "checkOutDate": "extractedData.checkOutDate",
+          "roomType": "extractedData.roomType",
+          "groupSize": "extractedData.groupSize",
+          "interests": "extractedData.interests"
+        },
+        "endpoint": "{{ $env.N8N_BOOKING_WEBHOOK }}"
+      },
+      "magicContentFlow": {
+        "trigger": "if (detectedAction === 'magic_content')",
+        "payload": {
+          "phone": "normalizedPhone",
+          "userId": "profile.id",
+          "sessionId": "sessionId",
+          "occasion": "extractedData.occasion",
+          "reservationId": "profile.last_booking_id"
+        },
+        "endpoint": "{{ $env.N8N_MAGIC_CONTENT_WEBHOOK }}"
+      }
+    }
+  },
+  "databaseSchema": {
+    "tables": [
+      {
+        "name": "whatsapp_sessions",
+        "columns": [
+          "id (UUID PRIMARY KEY)",
+          "phone_number (TEXT UNIQUE)",
+          "user_id (UUID FK profiles)",
+          "last_messages (JSONB)",
+          "context (JSONB)",
+          "created_at (TIMESTAMP)",
+          "updated_at (TIMESTAMP)"
+        ],
+        "indexes": [
+          "idx_whatsapp_sessions_phone (phone_number)",
+          "idx_whatsapp_sessions_user (user_id)"
+        ]
+      },
+      {
+        "name": "whatsapp_messages",
+        "columns": [
+          "id (UUID PRIMARY KEY)",
+          "session_id (UUID FK whatsapp_sessions)",
+          "user_id (UUID FK profiles)",
+          "phone_number (TEXT)",
+          "direction (TEXT: inbound|outbound|error|booking_initiated)",
+          "body (TEXT)",
+          "twilio_sid (TEXT UNIQUE)",
+          "created_at (TIMESTAMP)"
+        ],
+        "indexes": [
+          "idx_whatsapp_messages_session (session_id)",
+          "idx_whatsapp_messages_phone (phone_number)",
+          "idx_whatsapp_messages_created (created_at)"
+        ]
+      },
+      {
+        "name": "magic_content",
+        "columns": [
+          "id (UUID PRIMARY KEY)",
+          "reservation_id (UUID)",
+          "user_id (UUID FK profiles)",
+          "occasion (TEXT)",
+          "playlist_url (TEXT)",
+          "video_url (TEXT)",
+          "song_credits (JSONB)",
+          "created_at (TIMESTAMP)"
+        ],
+        "indexes": [
+          "idx_magic_content_user (user_id)",
+          "idx_magic_content_reservation (reservation_id)"
+        ]
+      },
+      {
+        "name": "agent_improvements",
+        "columns": [
+          "id (UUID PRIMARY KEY)",
+          "week_ending (TIMESTAMP)",
+          "total_runs (INT)",
+          "success_rate (NUMERIC)",
+          "top_issue (TEXT)",
+          "recommendations (JSONB)",
+          "created_at (TIMESTAMP)"
+        ]
+      }
+    ]
+  },
+  "monitoring": {
+    "dashboards": [
+      {
+        "name": "WhatsApp Admin Dashboard",
+        "url": "https://lina-point-ai-ecosystem.vercel.app/admin/whatsapp",
+        "frequency": "Check daily",
+        "metrics": ["Active sessions", "Message volume", "Error count", "Agent performance"]
+      },
+      {
+        "name": "n8n Execution History",
+        "url": "n8n-instance/workflows",
+        "frequency": "Check before/after changes",
+        "metrics": ["Successful executions", "Failed executions", "Execution time", "Error logs"]
+      },
+      {
+        "name": "Supabase Database",
+        "url": "supabase.co/dashboard",
+        "frequency": "Check weekly",
+        "metrics": ["Table sizes", "Query performance", "Connection count", "API usage"]
+      },
+      {
+        "name": "Vercel Deployment",
+        "url": "vercel.com/dashboard",
+        "frequency": "Check on errors",
+        "metrics": ["Response times", "Error rates", "Serverless function logs"]
+      }
+    ]
+  },
+  "alerts": {
+    "critical": [
+      "n8n workflow execution failed (red indicator)",
+      "Twilio message send failure",
+      "Database connection error",
+      "Webhook not responding (timeout > 30s)"
+    ],
+    "warning": [
+      "Success rate drops below 85%",
+      "Response time exceeds 5 seconds",
+      "Error count increases (> 3 per hour)",
+      "Booking conversion rate drops below 10%"
+    ]
+  },
+  "scaling": {
+    "phase1": {
+      "description": "Initial deployment (current)",
+      "workflows": 4,
+      "features": ["Booking", "Magic Content", "Admin Notifications", "Self-Improvement"],
+      "estimatedGuests": "50 per day"
+    },
+    "phase2": {
+      "description": "Scale to SMS fallback",
+      "workflows": "+1 (SMS Fallback)",
+      "features": "Send SMS if WhatsApp fails",
+      "estimatedGuests": "100+ per day"
+    },
+    "phase3": {
+      "description": "Add email notifications",
+      "workflows": "+2 (Email confirmation, Newsletter)",
+      "features": "Email booking confirmations, weekly newsletters",
+      "estimatedGuests": "200+ per day"
+    },
+    "phase4": {
+      "description": "Multi-channel orchestration",
+      "workflows": "+3 (Unified inbox, Chat routing, Analytics)",
+      "features": "Handle SMS/Email/Chat in unified inbox",
+      "estimatedGuests": "500+ per day"
+    }
+  },
+  "costEstimate": {
+    "n8n": {
+      "cloud": "Free tier: 200 executions/month, then $10-20/month",
+      "selfHosted": "$0 (you pay for server)"
+    },
+    "supabase": {
+      "included": "5 MB storage in free tier, then $25+/month"
+    },
+    "twilio": {
+      "perMessage": "$0.0079 per WhatsApp message",
+      "estimatedCost": "$25-50/month at launch"
+    },
+    "total": "$50-100/month for small resort (100-200 guests/month)"
+  }
+}

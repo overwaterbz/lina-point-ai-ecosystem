@@ -156,7 +156,8 @@ async function generateLyricsWithGrok(state: typeof ContentGenAnnotation.State) 
 }
 
 /**
- * Step 3: Generate audio via Suno API (mocked)
+ * Step 3: Generate audio via SunoAPI.org (unofficial Suno wrapper)
+ * Docs: https://docs.sunoapi.org/suno-api/generate-music
  */
 async function generateAudioViaSuno(state: typeof ContentGenAnnotation.State) {
   if (state.contentType === "video") {
@@ -164,26 +165,118 @@ async function generateAudioViaSuno(state: typeof ContentGenAnnotation.State) {
     return { ...state, sunoAudioUrl: "" };
   }
 
-  debugLog(`[ContentAgent] Calling Suno API to generate audio...`);
+  debugLog(`[ContentAgent] Calling SunoAPI.org to generate audio...`);
+
+  const SUNO_API_KEY = process.env.SUNO_API_KEY || "";
+  const SUNO_API_BASE = process.env.SUNO_API_BASE_URL || "https://api.sunoapi.org";
+
+  if (!SUNO_API_KEY) {
+    debugLog("[ContentAgent] No SUNO_API_KEY set, using Grok lyrics as text-only fallback");
+    return {
+      ...state,
+      sunoAudioUrl: "",
+      status: "generating_video" as const,
+    };
+  }
+
+  // Map our music styles to Suno style tags
+  const styleMap: Record<string, string> = {
+    tropical: "Tropical Pop, Caribbean, Upbeat",
+    edm: "EDM, Electronic Dance, Synth",
+    reggae: "Reggae, Dub, Island Vibes",
+    calypso: "Calypso, Soca, Caribbean",
+    ambient: "Ambient, Chill, Meditation",
+  };
+
+  const title = `${state.questionnaire.occasion} for ${state.questionnaire.recipientName}`.slice(0, 80);
 
   try {
-    // Mock Suno API response
-    // In production, replace with real Suno API call using grokLyrics as input
-    const mockAudioUrl = `https://supabase.storage.magic.content/audio/${state.userId}/${Date.now()}.mp3`;
+    // Step 1: Submit generation request to SunoAPI.org
+    const generateResponse = await fetch(`${SUNO_API_BASE}/api/v1/generate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${SUNO_API_KEY}`,
+      },
+      body: JSON.stringify({
+        customMode: true,
+        instrumental: false,
+        model: "V4",
+        prompt: state.grokLyrics.slice(0, 3000),
+        style: styleMap[state.questionnaire.musicStyle] || "Pop, Upbeat",
+        title,
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
 
-    debugLog(`[ContentAgent] ✅ Generated audio via Suno: ${mockAudioUrl}`);
+    if (!generateResponse.ok) {
+      const errText = await generateResponse.text();
+      throw new Error(`SunoAPI returned ${generateResponse.status}: ${errText}`);
+    }
+
+    const generateData = await generateResponse.json();
+    const taskId = generateData.data?.taskId;
+
+    if (!taskId) {
+      throw new Error("No taskId returned from SunoAPI");
+    }
+
+    debugLog(`[ContentAgent] Suno task submitted: ${taskId}`);
+
+    // Step 2: Poll for completion (max 180s with 10s intervals)
+    // SunoAPI.org: stream URL ~30-40s, downloadable ~2-3 min
+    let audioUrl = "";
+    const maxAttempts = 18;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 10000));
+
+      const statusResponse = await fetch(
+        `${SUNO_API_BASE}/api/v1/generate/record-info?taskId=${encodeURIComponent(taskId)}`,
+        {
+          headers: { "Authorization": `Bearer ${SUNO_API_KEY}` },
+          signal: AbortSignal.timeout(10000),
+        }
+      );
+
+      if (!statusResponse.ok) continue;
+
+      const statusData = await statusResponse.json();
+      const status = statusData.data?.status;
+
+      if (status === "SUCCESS" || status === "FIRST_SUCCESS") {
+        const sunoData = statusData.data?.response?.sunoData;
+        if (Array.isArray(sunoData) && sunoData.length > 0) {
+          audioUrl = sunoData[0].audioUrl || sunoData[0].streamAudioUrl || "";
+        }
+        if (audioUrl) break;
+      }
+
+      if (status === "CREATE_TASK_FAILED" || status === "GENERATE_AUDIO_FAILED") {
+        throw new Error(`Suno generation failed: ${statusData.data?.errorMessage || status}`);
+      }
+
+      debugLog(`[ContentAgent] Suno status: ${status} (attempt ${attempt + 1}/${maxAttempts})`);
+    }
+
+    if (!audioUrl) {
+      throw new Error("Suno generation timed out after 180s");
+    }
+
+    debugLog(`[ContentAgent] ✅ Generated audio via Suno: ${audioUrl}`);
 
     return {
       ...state,
-      sunoAudioUrl: mockAudioUrl,
-      status: "generating_video",
+      sunoAudioUrl: audioUrl,
+      status: "generating_video" as const,
     };
   } catch (error) {
     console.error("[ContentAgent] Suno generation failed:", error);
+    // Non-fatal — continue pipeline without audio
+    debugLog("[ContentAgent] Continuing without audio due to Suno error");
     return {
       ...state,
-      status: "failed",
-      error: `Suno audio generation failed: ${error instanceof Error ? error.message : String(error)}`,
+      sunoAudioUrl: "",
+      status: "generating_video" as const,
     };
   }
 }
@@ -260,20 +353,27 @@ async function mergeAndSave(state: typeof ContentGenAnnotation.State) {
   debugLog(`[ContentAgent] Merging and saving final ${state.contentType}...`);
 
   try {
-    // Determine final media URL based on content type
+    // Determine final media URL based on content type and what was generated
     let finalUrl: string;
 
-    if (state.contentType === "song" && state.klangioRemix) {
-      // Prefer remixed audio for songs
-      finalUrl = state.klangioRemix;
-    } else if (state.contentType === "song" && state.sunoAudioUrl) {
-      finalUrl = state.sunoAudioUrl;
-    } else if (state.contentType === "video" && state.ltxVideoUrl) {
-      finalUrl = state.ltxVideoUrl;
-    } else if (state.contentType === "audio_remix" && state.klangioRemix) {
-      finalUrl = state.klangioRemix;
+    if (state.contentType === "song") {
+      finalUrl = state.klangioRemix || state.sunoAudioUrl || "";
+    } else if (state.contentType === "video") {
+      finalUrl = state.ltxVideoUrl || "";
+    } else if (state.contentType === "audio_remix") {
+      finalUrl = state.klangioRemix || state.sunoAudioUrl || "";
     } else {
-      throw new Error("No media generated to save");
+      finalUrl = "";
+    }
+
+    if (!finalUrl) {
+      // If no media was generated (APIs unavailable), mark as lyrics-only
+      debugLog("[ContentAgent] No media generated — returning lyrics-only result");
+      return {
+        ...state,
+        mergedMediaUrl: "",
+        status: "completed" as const,
+      };
     }
 
     debugLog(`[ContentAgent] ✅ Final media URL: ${finalUrl}`);
@@ -281,13 +381,13 @@ async function mergeAndSave(state: typeof ContentGenAnnotation.State) {
     return {
       ...state,
       mergedMediaUrl: finalUrl,
-      status: "completed",
+      status: "completed" as const,
     };
   } catch (error) {
     console.error("[ContentAgent] Merge/save failed:", error);
     return {
       ...state,
-      status: "failed",
+      status: "failed" as const,
       error: `Media merge/save failed: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
@@ -370,10 +470,12 @@ export async function runContentAgent(request: ContentGenerationRequest): Promis
   return {
     type: request.contentType,
     title,
-    description: `Personalized ${request.contentType} created for ${request.questionnaire.occasion}`,
-    mediaUrl: finalState.mergedMediaUrl,
+    description: finalState.mergedMediaUrl
+      ? `Personalized ${request.contentType} created for ${request.questionnaire.occasion}`
+      : `Personalized ${request.contentType} lyrics created for ${request.questionnaire.occasion} (audio generation pending)`,
+    mediaUrl: finalState.mergedMediaUrl || "",
     durationSeconds: request.contentType === "video" ? 90 : 180,
-    fileSizeBytes: Math.floor(Math.random() * 10000000) + 5000000, // 5-15 MB mock
+    fileSizeBytes: finalState.mergedMediaUrl ? 8000000 : 0,
     provider: request.contentType === "song" ? "suno" : "ltx_studio",
     prompt: finalState.grokPrompt,
     processingTimeMs: processingTime,
@@ -381,7 +483,7 @@ export async function runContentAgent(request: ContentGenerationRequest): Promis
 }
 
 /**
- * Send download link email (stub - implement with SendGrid/Resend)
+ * Send download link email via Resend (or log if not configured)
  */
 export async function sendContentEmail(
   userEmail: string,
@@ -389,13 +491,47 @@ export async function sendContentEmail(
   contentType: string,
   recipientName: string
 ): Promise<boolean> {
+  const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
+  const FROM_EMAIL = process.env.MAGIC_FROM_EMAIL || "magic@linapointresort.com";
+
+  if (!RESEND_API_KEY) {
+    debugLog(`[ContentAgent] No RESEND_API_KEY — skipping email to ${userEmail}`);
+    return false;
+  }
+
   try {
-    debugLog(`[ContentAgent] Sending email to ${userEmail} with download link...`);
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${RESEND_API_KEY}`,
+      },
+      body: JSON.stringify({
+        from: FROM_EMAIL,
+        to: [userEmail],
+        subject: `Your Magic ${contentType === "song" ? "Song" : "Video"} for ${recipientName} is Ready!`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h1 style="color: #1e3a5f;">Your Magic is Ready ✨</h1>
+            <p>Hi there! Your personalized ${contentType} for <strong>${recipientName}</strong> has been created.</p>
+            <a href="${mediaUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; margin: 16px 0;">
+              Download Your ${contentType === "song" ? "Song" : "Video"}
+            </a>
+            <p style="color: #666; font-size: 14px; margin-top: 24px;">
+              With love from Lina Point Resort, San Pedro, Belize 🌴
+            </p>
+          </div>
+        `,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
 
-    // Mock email sending
-    // In production, use SendGrid, Resend, or AWS SES
-    debugLog(`✅ [ContentAgent] Email sent with ${contentType} download link`);
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Resend API returned ${response.status}: ${errText}`);
+    }
 
+    debugLog(`[ContentAgent] ✅ Email sent to ${userEmail}`);
     return true;
   } catch (error) {
     console.error(`[ContentAgent] Email send failed:`, error);

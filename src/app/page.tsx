@@ -16,9 +16,7 @@ export default function Home() {
         .select('*')
         .limit(1);
 
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('Supabase Test: Data:', data ?? [], 'Error:', error ?? null);
-      }
+
     };
 
     runSupabaseTest();

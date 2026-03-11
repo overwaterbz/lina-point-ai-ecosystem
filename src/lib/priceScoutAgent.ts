@@ -1,28 +1,18 @@
 /**
  * PriceScoutAgent: Multi-iteration price comparison for Lina Point Overwater Resort
- * Uses LangGraph to scan OTAs and beat competitors by 3%
+ * Uses LangGraph to scan OTAs via Tavily and beat competitors by 3%
  */
 
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { runWithRecursion } from "@/lib/agents/agentRecursion";
 import { evaluateTextQuality } from "@/lib/agents/recursionEvaluators";
+import { fetchCompetitivePrices, type OTAPrice } from "@/lib/otaIntegration";
 
 const isProd = process.env.NODE_ENV === "production";
 const debugLog = (...args: unknown[]) => {
   if (!isProd) {
     console.log(...args);
   }
-};
-
-// OTA mock data for Lina Point Overwater Room prices
-const OTA_DATA = {
-  expedia: { price: 450, url: "https://www.expedia.com/hotels/lina-point" },
-  booking: { price: 435, url: "https://www.booking.com/hotel/bz/lina-point" },
-  agoda: { price: 455, url: "https://www.agoda.com/hotels/lina-point" },
-  hotels: { price: 440, url: "https://www.hotels.com/hotel/bz/lina-point" },
-  tripadvisor: { price: 460, url: "https://www.tripadvisor.com/Hotel_Review-g154381-d123456-Reviews-Lina_Point.html" },
-  airbnb: { price: 425, url: "https://www.airbnb.com/rooms/lina-point" },
-  booking_last: { price: 432, url: "https://www.booking.com/deals/lina-point" },
 };
 
 export interface PriceScoutResult {
@@ -38,20 +28,6 @@ export interface PriceScoutResult {
   confidenceFeedback?: string;
 }
 
-// State for LangGraph recursion
-interface PriceScoutState {
-  roomType: string;
-  checkInDate: string;
-  checkOutDate: string;
-  location: string;
-  iteration: number;
-  bestPrice: number;
-  bestOTA: string;
-  beatPrice: number;
-  allPrices: Record<string, number>;
-  refinementNotes: string;
-}
-
 const PriceScoutAnnotation = Annotation.Root({
   roomType: Annotation<string>,
   checkInDate: Annotation<string>,
@@ -61,36 +37,51 @@ const PriceScoutAnnotation = Annotation.Root({
   bestPrice: Annotation<number>,
   bestOTA: Annotation<string>,
   beatPrice: Annotation<number>,
+  priceUrl: Annotation<string>,
   allPrices: Annotation<Record<string, number>>,
   refinementNotes: Annotation<string>,
 });
 
 /**
- * Step 1: Scan OTAs (mock - in production, use real scraping/APIs)
+ * Step 1: Scan OTAs using real Tavily-powered search
  */
 async function scanOTAs(state: typeof PriceScoutAnnotation.State) {
   debugLog(`[PriceScout] Iteration ${state.iteration}: Scanning OTAs for "${state.roomType}"...`);
 
-  // Simulate web scraping with some variance per iteration
-  const variance = state.iteration > 1 ? Math.random() * 0.02 : 0; // ±2% price variance per iteration
-  const scannedPrices: Record<string, number> = {};
+  const otaPrices = await fetchCompetitivePrices(
+    state.roomType,
+    state.checkInDate,
+    state.checkOutDate,
+    state.location
+  );
 
-  Object.entries(OTA_DATA).forEach(([ota, data]) => {
-    const variedPrice = data.price * (1 + (Math.random() - 0.5) * variance);
-    scannedPrices[ota] = Math.round(variedPrice * 100) / 100;
-  });
+  const scannedPrices: Record<string, number> = {};
+  let bestUrl = "";
+
+  for (const p of otaPrices) {
+    scannedPrices[p.ota] = p.price;
+  }
 
   // Find lowest
   const lowestEntry = Object.entries(scannedPrices).reduce((prev, curr) =>
-    prev[1] < curr[1] ? prev : curr
+    prev[1] < curr[1] ? prev : curr,
+    ["unknown", 9999]
   );
+
+  // Get URL of the best price
+  const bestOtaResult = otaPrices.find(p => p.ota === lowestEntry[0]);
+  bestUrl = bestOtaResult?.url || "";
+
+  const liveSources = otaPrices.filter(p => p.source === "live").length;
+  debugLog(`[PriceScout] Scanned ${Object.keys(scannedPrices).length} OTAs (${liveSources} live). Best: $${lowestEntry[1]} on ${lowestEntry[0]}`);
 
   return {
     ...state,
     bestPrice: lowestEntry[1],
     bestOTA: lowestEntry[0],
     allPrices: scannedPrices,
-    refinementNotes: `Scanned ${Object.keys(scannedPrices).length} OTAs. Best price: $${lowestEntry[1]} on ${lowestEntry[0]}`,
+    priceUrl: bestUrl,
+    refinementNotes: `Scanned ${Object.keys(scannedPrices).length} OTAs (${liveSources} live results). Best price: $${lowestEntry[1]} on ${lowestEntry[0]}`,
   };
 }
 
@@ -192,6 +183,7 @@ export async function runPriceScout(
     bestPrice: 9999,
     bestOTA: "unknown",
     beatPrice: 0,
+    priceUrl: "",
     allPrices: {},
     refinementNotes: "Starting price scout search...",
   };
@@ -220,7 +212,7 @@ export async function runPriceScout(
     savingsPercent: 3,
     savings: Math.round((finalState.bestPrice - finalState.beatPrice) * 100) / 100,
     iterations,
-    priceUrl: `https://linapoint.com/book?check_in=${checkInDate}&check_out=${checkOutDate}&guests=2&room_type=${roomType}`,
+    priceUrl: finalState.priceUrl || `https://linapoint.com/book?check_in=${checkInDate}&check_out=${checkOutDate}&guests=2&room_type=${encodeURIComponent(roomType)}`,
     allPrices: finalState.allPrices,
     confidenceScore: score,
     confidenceFeedback: feedback,
